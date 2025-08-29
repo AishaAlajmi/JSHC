@@ -5,7 +5,7 @@ import LoginEmail from "./components/LoginEmail";
 import Dashboard from "./components/Dashboard";
 import UserForm from "./components/common/UserForm";
 import exportToExcel from "./utils/exportToExcel";
-import { submitDailyEntry } from "./lib/storage"; // ⬅️ NEW
+import { submitDailyEntry, getEntries } from "./lib/storage"; // ✅ single import
 
 // ===== Debug helpers (logs only) =====
 const DEBUG = true;
@@ -13,7 +13,7 @@ const log = (...args) => {
   if (DEBUG) console.log("[HPVDemo]", ...args);
 };
 
-// ===== Brand styles + Modal (global brand only here) =====
+// ===== Brand styles (global) =====
 const BrandStyles = () => (
   <style>{`
     :root{--brand:#1691D0;--brand-dark:#15508A;--brand-alt:#3AC0C3}
@@ -34,10 +34,7 @@ const LS_SCHOOL_INFO = "hpv_school_info_v1";
 
 function seedUsers() {
   const existing = JSON.parse(localStorage.getItem(LS_USERS) || "null");
-  if (existing) {
-    log("seedUsers:existing", existing);
-    return existing;
-  }
+  if (existing) return existing;
   const seeded = {
     "aishahadi2013@gmail.com": { role: "user", facility: "رابغ" },
     "jamelah.hadi2019@gmail.com": {
@@ -51,40 +48,30 @@ function seedUsers() {
     "alia@gmail.com": { role: "admin", facility: null },
   };
   localStorage.setItem(LS_USERS, JSON.stringify(seeded));
-  log("seedUsers:seeded", seeded);
   return seeded;
 }
 function getUsers() {
-  const u = JSON.parse(localStorage.getItem(LS_USERS) || "null") || seedUsers();
-  log("getUsers", u);
-  return u;
+  return JSON.parse(localStorage.getItem(LS_USERS) || "null") || seedUsers();
 }
 function setUsers(obj) {
-  log("setUsers", obj);
   localStorage.setItem(LS_USERS, JSON.stringify(obj));
 }
 
 function getResponses() {
-  const r = JSON.parse(localStorage.getItem(LS_RESPONSES) || "[]");
-  log("getResponses", r);
-  return r;
+  return JSON.parse(localStorage.getItem(LS_RESPONSES) || "[]");
 }
 function setResponses(rows) {
-  log("setResponses", rows);
   localStorage.setItem(LS_RESPONSES, JSON.stringify(rows));
 }
 
 function getSchoolInfo() {
-  const m = JSON.parse(localStorage.getItem(LS_SCHOOL_INFO) || "{}");
-  log("getSchoolInfo", m);
-  return m;
+  return JSON.parse(localStorage.getItem(LS_SCHOOL_INFO) || "{}");
 }
 function setSchoolInfo(map) {
-  log("setSchoolInfo", map);
   localStorage.setItem(LS_SCHOOL_INFO, JSON.stringify(map));
 }
 
-// Seed demo responses once
+// Seed demo rows once (only for first load / offline preview)
 if (!localStorage.getItem(LS_RESPONSES)) {
   const t = new Date().toISOString().slice(0, 10);
   const rows = [
@@ -123,7 +110,7 @@ if (!localStorage.getItem(LS_RESPONSES)) {
 }
 
 // ======================
-// Utils & UI bits used below
+// Small UI helpers
 // ======================
 function Card({ title, children, actions }) {
   return (
@@ -145,6 +132,7 @@ function AdminManageUsers() {
   const [email, setEmail] = useState("");
   const [role, setRole] = useState("user");
   const [facility, setFacility] = useState(FACILITIES[0] || "");
+
   function addOrUpdate() {
     const key = email.trim().toLowerCase();
     if (!key) return;
@@ -152,7 +140,6 @@ function AdminManageUsers() {
       ...users,
       [key]: { role, facility: role === "admin" ? null : facility },
     };
-    log("Admin:addOrUpdate", { key, role, facility, next });
     setUsers(next);
     setUsersState(next);
     setEmail("");
@@ -160,10 +147,10 @@ function AdminManageUsers() {
   function removeKey(k) {
     const next = { ...users };
     delete next[k];
-    log("Admin:removeKey", k);
     setUsers(next);
     setUsersState(next);
   }
+
   return (
     <Card
       title="صلاحيات المستخدمين"
@@ -308,11 +295,6 @@ function MyRecordsSmart({ email, rows }) {
     else if (filters.sortBy === "unvaccinated")
       arr.sort((a, b) => (a.unvaccinated - b.unvaccinated) * dir);
     else arr.sort((a, b) => a.date.localeCompare(b.date) * dir);
-    log("MyRecords:sorted", {
-      count: arr.length,
-      sortBy: filters.sortBy,
-      dir: filters.dir,
-    });
     return arr;
   }, [filtered, filters.sortBy, filters.dir]);
 
@@ -415,13 +397,47 @@ export default function HPVDemo() {
   const [schoolInfo, setSchoolInfoState] = useState(getSchoolInfo());
 
   function signOut() {
-    log("App:signOut");
     setUser(null);
   }
 
-  // ⬇️ EDITED: This now writes to Supabase then updates local state
+  // Map Supabase row → the local shape your UI uses
+  function mapEntryToLocal(e) {
+    return {
+      date: (e.created_at || "").slice(0, 10),
+      email: e.created_by || "",
+      facility: e.facility || "",
+      center: e.clinic_name || "",
+      school: e.school_name || "",
+      vaccinated: e.vaccinated ?? 0,
+      refused: e.refused ?? 0,
+      absent: e.absent ?? 0,
+      unvaccinated: e.not_accounted ?? 0,
+      sex: e.gender || "",
+      authority: e.authority || "",
+      stage: e.stage || "",
+      schoolTotal: e.school_total ?? 0,
+    };
+  }
+
+  // Load rows from Supabase when the user logs in
+  useEffect(() => {
+    if (!user) return;
+    (async () => {
+      try {
+        const params = user.role === "user" ? { created_by: user.email } : {};
+        const { rows } = await getEntries(params);
+        const mapped = (rows || []).map(mapEntryToLocal);
+        setRows(mapped);
+        setResponses(mapped);
+        log("Loaded entries from Supabase:", mapped.length);
+      } catch (e) {
+        console.error("Failed to load entries:", e);
+      }
+    })();
+  }, [user?.email, user?.role]);
+
+  // Save to Supabase, then update local list
   async function addRow(previewRow) {
-    // map the previewRow (from UserForm) → API payload
     const payload = {
       facility: previewRow.facility,
       clinic_name: previewRow.center,
@@ -437,27 +453,22 @@ export default function HPVDemo() {
       created_by: previewRow.email || (user?.email ?? ""),
     };
 
-    // write to Supabase (serverless API)
     const inserted = await submitDailyEntry(payload);
 
-    // update local list so "My Records" shows it immediately
     const localRow = {
       ...previewRow,
       date: previewRow.date || (inserted?.created_at || "").slice(0, 10),
     };
     const next = [...responses, localRow];
-    log("App:addRow(saved to Supabase)", { inserted, localRow });
     setRows(next);
     setResponses(next);
-    return inserted; // let UserForm await this
+    return inserted;
   }
 
   function onExport(rows) {
-    log("App:onExport", rows.length);
     exportToExcel(rows);
   }
   function onUpdateSchoolInfo(map) {
-    log("App:onUpdateSchoolInfo", Object.keys(map).length);
     setSchoolInfoState(map);
     setSchoolInfo(map);
   }
@@ -475,7 +486,7 @@ export default function HPVDemo() {
               <>
                 <div className="text-sm text-right">
                   <div className="font-semibold">{user.email}</div>
-                  <div className="text-gray-2 00">
+                  <div className="text-gray-200">
                     {user.role === "admin" ? "مشرف" : user.facility}
                   </div>
                 </div>
@@ -496,7 +507,6 @@ export default function HPVDemo() {
           <>
             <LoginEmail
               onLogin={(u) => {
-                log("App:onLogin", u);
                 setUser(u);
               }}
               users={getUsers()}
@@ -527,7 +537,7 @@ export default function HPVDemo() {
                 email={user.email}
                 facility={user.facility}
                 meta={META}
-                onSubmit={addRow} // ← keeps calling our Supabase-backed handler
+                onSubmit={addRow}
                 schoolInfo={schoolInfo}
               />
             </Card>

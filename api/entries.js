@@ -1,22 +1,42 @@
-
+// /api/entries.js
 import { createClient } from '@supabase/supabase-js';
-const supabase2 = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } });
 
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY // server-only
+);
+
+// GET /api/entries?created_by=email@x.com&facility=...&from=YYYY-MM-DD&to=YYYY-MM-DD
 export default async function handler(req, res) {
-  if (req.method !== 'GET') { res.setHeader('Allow', 'GET'); res.status(405).json({ error: 'Method Not Allowed' }); return; }
+  if (req.method !== 'GET') {
+    res.status(405).json({ error: 'Method not allowed' });
+    return;
+  }
+
   try {
-    const { from = '', to = '', region = '', facility = '' } = req.query;
-    let q = supabase2.from('daily_entries').select('*', { count: 'exact' }).order('created_at', { ascending: false });
-    if (from) q = q.gte('created_at', from);
-    if (to) q = q.lte('created_at', to);
-    if (region) q = q.eq('region', region);
+    const url = new URL(req.url, `http://${req.headers.host}`);
+    const from = url.searchParams.get('from');
+    const to = url.searchParams.get('to');
+    const created_by = url.searchParams.get('created_by');
+    const facility = url.searchParams.get('facility');
+
+    let q = supabase
+      .from('daily_entries')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(1000);
+
+    if (created_by) q = q.eq('created_by', created_by);
     if (facility) q = q.eq('facility', facility);
-    const { data, count, error } = await q.limit(1000);
+    if (from) q = q.gte('created_at', `${from}T00:00:00Z`);
+    if (to) q = q.lte('created_at', `${to}T23:59:59Z`);
+
+    const { data, error } = await q;
     if (error) throw error;
-    res.status(200).json({ rows: data, count });
+
+    res.status(200).json({ rows: data });
   } catch (e) {
-    console.error('API /api/entries error', e);
-    res.status(500).json({ error: 'Internal Server Error' });
+    console.error('[entries] fetch failed:', e);
+    res.status(500).json({ error: e.message || 'Failed to load entries' });
   }
 }
-
