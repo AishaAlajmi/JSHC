@@ -273,9 +273,7 @@ export default function HPVDemo() {
       unvaccinated: e.not_accounted ?? 0,
       // for de-dupe/sorting and “آخر تعديل”
       ts: e.updated_at ? new Date(e.updated_at).getTime() : 0,
-      lastEdited: e.updated_at
-        ? new Date(e.updated_at).toLocaleString("ar-SA", { hour12: false })
-        : "—",
+      lastEdited: e.updated_at ? new Date(e.updated_at) : "—",
     };
   }
 
