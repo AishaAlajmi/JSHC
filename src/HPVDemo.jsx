@@ -1,9 +1,11 @@
+// File: src/HPVDemo.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import { META, FACILITIES } from "./data/meta";
 import LoginEmail from "./components/LoginEmail";
 import Dashboard from "./components/Dashboard";
 import UserForm from "./components/common/UserForm";
 import exportToExcel from "./utils/exportToExcel";
+import { submitDailyEntry } from "./lib/storage"; // ⬅️ NEW
 
 // ===== Debug helpers (logs only) =====
 const DEBUG = true;
@@ -416,12 +418,40 @@ export default function HPVDemo() {
     log("App:signOut");
     setUser(null);
   }
-  function addRow(row) {
-    const n = [...responses, row];
-    log("App:addRow", row);
-    setRows(n);
-    setResponses(n);
+
+  // ⬇️ EDITED: This now writes to Supabase then updates local state
+  async function addRow(previewRow) {
+    // map the previewRow (from UserForm) → API payload
+    const payload = {
+      facility: previewRow.facility,
+      clinic_name: previewRow.center,
+      school_name: previewRow.school,
+      gender: previewRow.sex || "غير محدد",
+      authority: previewRow.authority,
+      stage: previewRow.stage,
+      vaccinated: previewRow.vaccinated,
+      refused: previewRow.refused,
+      absent: previewRow.absent,
+      not_accounted: previewRow.unvaccinated,
+      school_total: previewRow.schoolTotal,
+      created_by: previewRow.email || (user?.email ?? ""),
+    };
+
+    // write to Supabase (serverless API)
+    const inserted = await submitDailyEntry(payload);
+
+    // update local list so "My Records" shows it immediately
+    const localRow = {
+      ...previewRow,
+      date: previewRow.date || (inserted?.created_at || "").slice(0, 10),
+    };
+    const next = [...responses, localRow];
+    log("App:addRow(saved to Supabase)", { inserted, localRow });
+    setRows(next);
+    setResponses(next);
+    return inserted; // let UserForm await this
   }
+
   function onExport(rows) {
     log("App:onExport", rows.length);
     exportToExcel(rows);
@@ -497,7 +527,7 @@ export default function HPVDemo() {
                 email={user.email}
                 facility={user.facility}
                 meta={META}
-                onSubmit={addRow}
+                onSubmit={addRow} // ← keeps calling our Supabase-backed handler
                 schoolInfo={schoolInfo}
               />
             </Card>

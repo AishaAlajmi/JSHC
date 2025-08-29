@@ -1,58 +1,67 @@
-
+// /api/submissions.js
 import { createClient } from '@supabase/supabase-js';
-const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } });
 
-function toInt(n, def = 0) {
-  const v = Number.parseInt(n, 10);
-  return Number.isFinite(v) && v >= 0 ? v : def;
-}
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY // server-only
+);
 
 export default async function handler(req, res) {
+  if (req.method !== 'POST') {
+    res.status(405).json({ error: 'Method not allowed' });
+    return;
+  }
+
   try {
-    if (req.method === 'POST') {
-      const b = req.body ?? {};
-      const row = {
-        facility: String(b.facility || '').trim(),
-        clinic_name: String(b.clinic_name || '').trim(),
-        school_name: String(b.school_name || '').trim(),
-        gender: String(b.gender || 'غير محدد').trim(),
-        authority: String(b.authority || '').trim(),
-        stage: String(b.stage || '').trim(),
-        vaccinated: toInt(b.vaccinated),
-        refused: toInt(b.refused),
-        absent: toInt(b.absent),
-        not_accounted: toInt(b.not_accounted),
-        school_total: toInt(b.school_total),
-        region: String(b.region || '').trim(),
-        created_by: String(b.created_by || '').trim()
-      };
+    const {
+      facility,
+      clinic_name,
+      school_name,
+      gender,
+      authority,
+      stage,
+      vaccinated,
+      refused,
+      absent,
+      not_accounted,
+      school_total,
+      region,
+      created_by,
+    } = req.body || {};
 
-      if (!row.facility || !row.school_name) {
-        res.status(400).json({ error: 'facility and school_name are required' });
-        return;
-      }
-
-      const { data, error } = await supabase.from('daily_entries').insert([row]).select().single();
-      if (error) throw error;
-      res.status(201).json(data);
-      return;
+    // basic validation
+    if (!facility || !school_name) {
+      return res.status(400).json({ error: 'facility and school_name are required' });
     }
 
-    if (req.method === 'GET') {
-      const { data, error } = await supabase
-        .from('daily_entries')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(100);
-      if (error) throw error;
-      res.status(200).json(data);
-      return;
-    }
+    // coerce numbers safely
+    const toInt = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
 
-    res.setHeader('Allow', 'GET, POST');
-    res.status(405).json({ error: 'Method Not Allowed' });
-  } catch (err) {
-    console.error('API /api/submissions error', err);
-    res.status(500).json({ error: 'Internal Server Error' });
+    const { data, error } = await supabase
+      .from('daily_entries')
+      .insert([{
+        facility,
+        clinic_name,
+        school_name,
+        gender,
+        authority,
+        stage,
+        vaccinated:    toInt(vaccinated),
+        refused:       toInt(refused),
+        absent:        toInt(absent),
+        not_accounted: toInt(not_accounted),
+        school_total:  toInt(school_total),
+        region:        region || null,
+        created_by:    created_by || null
+      }])
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    res.status(200).json(data);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: e.message || 'Insert failed' });
   }
 }
