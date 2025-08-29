@@ -343,7 +343,7 @@ export default function UserForm({
 
       {/* fixed info */}
       <Card
-        title="الحقول الثابتة (تُجلب تلقائيًا)"
+        title="الحقول الثابتة"
         subtitle="تُعرض للمرجع ولا يمكن تعديلها هنا."
       >
         <div className="grid md:grid-cols-4 gap-3 text-sm">

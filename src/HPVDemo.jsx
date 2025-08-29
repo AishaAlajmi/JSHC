@@ -251,7 +251,7 @@ export default function HPVDemo() {
 
         {user && user.role === "user" && (
           <div className="grid gap-4">
-            <Card title="نموذج الإدخال اليومي">
+            <Card >
               <UserForm
                 email={user.email}
                 facility={user.facility}
