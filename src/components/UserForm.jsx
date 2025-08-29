@@ -1,8 +1,9 @@
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState } from 'react';
+import { submitDailyEntry } from '../lib/storage';
 
 const DEBUG = true;
-const log = (...args) => { if (DEBUG) console.log("[UserForm]", ...args); };
+const log = (...args) => { if (DEBUG) console.log('[UserForm]', ...args); };
 
 function todayStr() { return new Date().toISOString().slice(0,10); }
 function numberOrNull(v) { const n = Number(v); return Number.isFinite(n) && n >= 0 ? n : null; }
@@ -64,15 +65,42 @@ export default function UserForm({ email, facility, meta, onSubmit, schoolInfo }
     setPreview(data);
     log("previewData", data);
   }
-  function confirmSave() {
-    if (preview) {
-      log("confirmSave", preview);
-      onSubmit(preview);
+
+  async function saveToAPI(p) {
+    // Why: adapt front-end fields to DB columns expected by /api/submissions
+    const input = {
+      facility: p.facility,
+      clinic_name: p.center,
+      school_name: p.school,
+      gender: p.sex || 'غير محدد',
+      authority: p.authority,
+      stage: p.stage,
+      vaccinated: p.vaccinated,
+      refused: p.refused,
+      absent: p.absent,
+      not_accounted: p.unvaccinated,
+      school_total: p.schoolTotal,
+      created_by: email || p.email || ''
+    };
+    await submitDailyEntry(input);
+  }
+
+  async function confirmSave() {
+    if (!preview) return;
+    try {
+      setStatus({ type: 'saving', msg: 'جارٍ الحفظ…' });
+      const saver = onSubmit || saveToAPI; // If parent passed a handler, use it; else save to API
+      await saver(preview);
       setVaccinated(""); setRefused(""); setAbsent("");
       setPreview(null);
       setStatus({ type: "ok", msg: "تم الحفظ" });
+    } catch (e) {
+      console.error(e);
+      setStatus({ type: "error", msg: e.message || 'حدث خطأ أثناء الحفظ' });
     }
   }
+
+  const isSaving = status.type === 'saving';
 
   return (
     <form onSubmit={askPreview} className="space-y-4">
@@ -112,15 +140,16 @@ export default function UserForm({ email, facility, meta, onSubmit, schoolInfo }
       </div>
 
       <div className="flex gap-2 items-center">
-        <button type="submit" className="px-6 py-2 rounded-2xl bg-black text-white hover:opacity-90">مراجعة</button>
+        <button type="submit" className="px-6 py-2 rounded-2xl bg-black text-white hover:opacity-90" disabled={isSaving}>مراجعة</button>
         {status.type === "ok" && <span className="text-green-600">{status.msg}</span>}
         {status.type === "error" && <span className="text-red-600">{status.msg}</span>}
+        {isSaving && <span className="text-gray-500">جارٍ الحفظ…</span>}
       </div>
 
       <Modal open={!!preview} onClose={()=>setPreview(null)} title="تأكيد الإرسال" actions={
         <>
-          <button onClick={confirmSave} type="button" className="btn btn-primary">إرسال</button>
-          <button onClick={()=>setPreview(null)} type="button" className="btn btn-ghost">تعديل</button>
+          <button onClick={confirmSave} type="button" className="btn btn-primary" disabled={isSaving}>إرسال</button>
+          <button onClick={()=>setPreview(null)} type="button" className="btn btn-ghost" disabled={isSaving}>تعديل</button>
         </>
       }>
         {preview && (
@@ -143,3 +172,4 @@ export default function UserForm({ email, facility, meta, onSubmit, schoolInfo }
     </form>
   );
 }
+
