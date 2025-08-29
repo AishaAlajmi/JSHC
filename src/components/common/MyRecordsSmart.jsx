@@ -77,7 +77,6 @@ const LocalStyles = () => (
     table.hpv-table tbody td { padding:.75rem .75rem; border-top:1px solid #f1f5f9; color:#0f172a; }
     table.hpv-table tbody tr:nth-child(odd) { background:#fcfcfd; }
     table.hpv-table tbody tr:hover { background:#f5f7fb; }
-    table.hpv-table tbody td:first-child { border-inline-start:0; }
     table.hpv-table thead th:first-child { border-top-right-radius:1rem; }
     table.hpv-table thead th:last-child { border-top-left-radius:1rem; }
 
@@ -114,22 +113,40 @@ export default function MyRecordsSmart({ email, rows, onExport }) {
     dir: "desc",
   });
 
-  /* Filter then sort */
-  const filtered = useMemo(
-    () =>
-      rows.filter((r) => {
-        if (r.email !== email) return false;
-        if (filters.from && r.date < filters.from) return false;
-        if (filters.to && r.date > filters.to) return false;
-        const q = filters.q.trim();
-        if (q && !(r.center.includes(q) || r.school.includes(q))) return false;
-        return true;
-      }),
-    [rows, email, filters.from, filters.to, filters.q]
-  );
+  /** 1) Filter (case-insensitive search) */
+  const filtered = useMemo(() => {
+    const q = filters.q.trim().toLowerCase();
+    return rows.filter((r) => {
+      if (r.email !== email) return false;
+      if (filters.from && r.date < filters.from) return false;
+      if (filters.to && r.date > filters.to) return false;
+      if (
+        q &&
+        !(
+          `${r.center}`.toLowerCase().includes(q) ||
+          `${r.school}`.toLowerCase().includes(q)
+        )
+      ) {
+        return false;
+      }
+      return true;
+    });
+  }, [rows, email, filters.from, filters.to, filters.q]);
 
+  /** 2) DE-DUPE: keep only one row per (date, center, school). If a row has ts, latest wins. */
+  const uniqueByPair = useMemo(() => {
+    const map = new Map();
+    for (const r of filtered) {
+      const key = `${r.date}|${r.center}|${r.school}`;
+      const prev = map.get(key);
+      if (!prev || (r.ts ?? 0) >= (prev?.ts ?? 0)) map.set(key, r);
+    }
+    return Array.from(map.values());
+  }, [filtered]);
+
+  /** 3) Sort */
   const sorted = useMemo(() => {
-    const arr = [...filtered];
+    const arr = [...uniqueByPair];
     const dir = filters.dir === "asc" ? 1 : -1;
     if (filters.sortBy === "vaccinated")
       arr.sort((a, b) => (a.vaccinated - b.vaccinated) * dir);
@@ -137,9 +154,9 @@ export default function MyRecordsSmart({ email, rows, onExport }) {
       arr.sort((a, b) => (a.unvaccinated - b.unvaccinated) * dir);
     else arr.sort((a, b) => a.date.localeCompare(b.date) * dir);
     return arr;
-  }, [filtered, filters.sortBy, filters.dir]);
+  }, [uniqueByPair, filters.sortBy, filters.dir]);
 
-  /* Quick totals (after filters) */
+  /** 4) Totals after de-dupe + filters */
   const totals = useMemo(() => {
     return sorted.reduce(
       (acc, r) => {
@@ -274,8 +291,8 @@ export default function MyRecordsSmart({ email, rows, onExport }) {
                 </tr>
               </thead>
               <tbody>
-                {sorted.slice(-500).map((r, i) => (
-                  <tr key={`${r.date}-${i}`}>
+                {sorted.slice(-500).map((r) => (
+                  <tr key={`${r.date}|${r.center}|${r.school}`}>
                     <td className="whitespace-nowrap">{r.date}</td>
                     <td>{r.center}</td>
                     <td>{r.school}</td>
