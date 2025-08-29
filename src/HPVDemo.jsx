@@ -271,10 +271,8 @@ export default function HPVDemo() {
       refused: e.refused ?? 0,
       absent: e.absent ?? 0,
       unvaccinated: e.not_accounted ?? 0,
-      // for de-dupe/sorting and “آخر تعديل”
-      ts: e.updated_at ? new Date(e.updated_at).getTime() : 0,
-      lastEdited: e.updated_at ? new Date(e.updated_at) : "—",
-    };
+    
+    ts: updatedISO ? new Date(updatedISO).getTime() : 0,};
   }
 
   useEffect(() => {

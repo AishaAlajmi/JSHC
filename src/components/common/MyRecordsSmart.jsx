@@ -345,9 +345,7 @@ export default function MyRecordsSmart({ email, rows, onExport, onRowEdited }) {
                     <td>{r.refused}</td>
                     <td>{r.absent}</td>
                     <td>{r.unvaccinated}</td>
-                    <td className="whitespace-nowrap">
-                      {fmtDT(r.updated_at || r.created_at || r.ts)}
-                    </td>
+                    <td className="whitespace-nowrap">{r.updated_at}</td>
                     <td>
                       <button
                         className="hpv-btn hpv-btn-ghost"
