@@ -9,7 +9,9 @@ import { submitDailyEntry, getEntries } from "./lib/storage";
 import LoginPage from "./components/LoginPage";
 
 const DEBUG = true;
-const log = (...args) => { if (DEBUG) console.log("[HPVDemo]", ...args); };
+const log = (...args) => {
+  if (DEBUG) console.log("[HPVDemo]", ...args);
+};
 
 const BrandStyles = () => (
   <style>{`
@@ -33,28 +35,74 @@ function seedUsers() {
   if (existing) return existing;
   const seeded = {
     "aishahadi2013@gmail.com": { role: "user", facility: "رابغ" },
-    "jamelah.hadi2019@gmail.com": { role: "user", facility: "مجمع الملك عبد الله" },
-    "hajer@gmail.com": { role: "user", facility: "م. ا فهد مع المدارس العالمية" },
+    "jamelah.hadi2019@gmail.com": {
+      role: "user",
+      facility: "مجمع الملك عبد الله",
+    },
+    "hajer@gmail.com": {
+      role: "user",
+      facility: "م. ا فهد مع المدارس العالمية",
+    },
     "alia@gmail.com": { role: "admin", facility: null },
   };
   localStorage.setItem(LS_USERS, JSON.stringify(seeded));
   return seeded;
 }
-function getUsers() { return JSON.parse(localStorage.getItem(LS_USERS) || "null") || seedUsers(); }
-function setUsers(obj) { localStorage.setItem(LS_USERS, JSON.stringify(obj)); }
+function getUsers() {
+  return JSON.parse(localStorage.getItem(LS_USERS) || "null") || seedUsers();
+}
+function setUsers(obj) {
+  localStorage.setItem(LS_USERS, JSON.stringify(obj));
+}
 
-function getResponses() { return JSON.parse(localStorage.getItem(LS_RESPONSES) || "[]"); }
-function setResponses(rows) { localStorage.setItem(LS_RESPONSES, JSON.stringify(rows)); }
+function getResponses() {
+  return JSON.parse(localStorage.getItem(LS_RESPONSES) || "[]");
+}
+function setResponses(rows) {
+  localStorage.setItem(LS_RESPONSES, JSON.stringify(rows));
+}
 
-function getSchoolInfo() { return JSON.parse(localStorage.getItem(LS_SCHOOL_INFO) || "{}"); }
-function setSchoolInfo(map) { localStorage.setItem(LS_SCHOOL_INFO, JSON.stringify(map)); }
+function getSchoolInfo() {
+  return JSON.parse(localStorage.getItem(LS_SCHOOL_INFO) || "{}");
+}
+function setSchoolInfo(map) {
+  localStorage.setItem(LS_SCHOOL_INFO, JSON.stringify(map));
+}
 
 // seed demo
 if (!localStorage.getItem(LS_RESPONSES)) {
   const t = new Date().toISOString().slice(0, 10);
   const rows = [
-    { date: t, email: "aishahadi2013@gmail.com", facility: "رابغ", center: "رابغ", school: "الابتدائية الاولى", vaccinated: 12, refused: 1, absent: 2, unvaccinated: 3, sex:"بنات", authority:"حكومي", stage:"متوسط", schoolTotal:300 },
-    { date: t, email: "jamelah.hadi2019@gmail.com", facility: "مجمع الملك عبد الله", center: "مركز صحي بريمان", school: "المتوسطة الثانية بعد المئة", vaccinated: 18, refused: 2, absent: 2, unvaccinated: 4, sex:"بنات", authority:"حكومي", stage:"متوسط", schoolTotal:420 },
+    {
+      date: t,
+      email: "aishahadi2013@gmail.com",
+      facility: "رابغ",
+      center: "رابغ",
+      school: "الابتدائية الاولى",
+      vaccinated: 12,
+      refused: 1,
+      absent: 2,
+      unvaccinated: 3,
+      sex: "بنات",
+      authority: "حكومي",
+      stage: "متوسط",
+      schoolTotal: 300,
+    },
+    {
+      date: t,
+      email: "jamelah.hadi2019@gmail.com",
+      facility: "مجمع الملك عبد الله",
+      center: "مركز صحي بريمان",
+      school: "المتوسطة الثانية بعد المئة",
+      vaccinated: 18,
+      refused: 2,
+      absent: 2,
+      unvaccinated: 4,
+      sex: "بنات",
+      authority: "حكومي",
+      stage: "متوسط",
+      schoolTotal: 420,
+    },
   ];
   setResponses(rows);
 }
@@ -80,35 +128,66 @@ function AdminManageUsers() {
   function addOrUpdate() {
     const key = email.trim().toLowerCase();
     if (!key) return;
-    const next = { ...users, [key]: { role, facility: role === "admin" ? null : facility } };
-    setUsers(next); setUsersState(next); setEmail("");
+    const next = {
+      ...users,
+      [key]: { role, facility: role === "admin" ? null : facility },
+    };
+    setUsers(next);
+    setUsersState(next);
+    setEmail("");
   }
   function removeKey(k) {
-    const next = { ...users }; delete next[k]; setUsers(next); setUsersState(next);
+    const next = { ...users };
+    delete next[k];
+    setUsers(next);
+    setUsersState(next);
   }
 
   return (
     <Card
       title="صلاحيات المستخدمين"
-      actions={<button className="btn btn-primary" onClick={addOrUpdate}>حفظ</button>}
+      actions={
+        <button className="btn btn-primary" onClick={addOrUpdate}>
+          حفظ
+        </button>
+      }
     >
       <div className="grid md:grid-cols-4 gap-2">
-        <input className="border rounded-xl px-3 py-2" placeholder="أدخل بريدًا"
-          value={email} onChange={(e) => setEmail(e.target.value)} />
-        <select className="border rounded-xl px-3 py-2" value={role} onChange={(e) => setRole(e.target.value)}>
+        <input
+          className="border rounded-xl px-3 py-2"
+          placeholder="أدخل بريدًا"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+        />
+        <select
+          className="border rounded-xl px-3 py-2"
+          value={role}
+          onChange={(e) => setRole(e.target.value)}
+        >
           <option value="user">User</option>
           <option value="admin">Admin</option>
         </select>
-        <select className="border rounded-xl px-3 py-2" value={facility}
-          onChange={(e) => setFacility(e.target.value)} disabled={role === "admin"}>
-          {FACILITIES.map((f) => (<option key={f} value={f}>{f}</option>))}
+        <select
+          className="border rounded-xl px-3 py-2"
+          value={facility}
+          onChange={(e) => setFacility(e.target.value)}
+          disabled={role === "admin"}
+        >
+          {FACILITIES.map((f) => (
+            <option key={f} value={f}>
+              {f}
+            </option>
+          ))}
         </select>
       </div>
       <div className="overflow-auto mt-3">
         <table className="min-w-full text-sm">
           <thead>
             <tr className="text-right border-b">
-              <th className="p-2">البريد</th><th className="p-2">الدور</th><th className="p-2">المنشأة</th><th className="p-2">إدارة</th>
+              <th className="p-2">البريد</th>
+              <th className="p-2">الدور</th>
+              <th className="p-2">المنشأة</th>
+              <th className="p-2">إدارة</th>
             </tr>
           </thead>
           <tbody>
@@ -116,8 +195,17 @@ function AdminManageUsers() {
               <tr key={k} className="border-b">
                 <td className="p-2">{k}</td>
                 <td className="p-2">{v.role}</td>
-                <td className="p-2">{v.role === "admin" ? "-" : v.facility || ""}</td>
-                <td className="p-2"><button className="btn btn-ghost" onClick={() => removeKey(k)}>حذف</button></td>
+                <td className="p-2">
+                  {v.role === "admin" ? "-" : v.facility || ""}
+                </td>
+                <td className="p-2">
+                  <button
+                    className="btn btn-ghost"
+                    onClick={() => removeKey(k)}
+                  >
+                    حذف
+                  </button>
+                </td>
               </tr>
             ))}
           </tbody>
@@ -130,24 +218,37 @@ function AdminManageUsers() {
 function runSelfTests() {
   try {
     Object.entries(META.centersByFacility).forEach(([f, centers]) => {
-      if (!centers || !centers.length) console.warn("لا توجد مراكز للمنشأة:", f);
+      if (!centers || !centers.length)
+        console.warn("لا توجد مراكز للمنشأة:", f);
     });
     Object.entries(META.centersByFacility).forEach(([f, centers]) => {
       centers.forEach((c) => {
         const k = `${f}::${c}`;
-        if (!Array.isArray(META.schoolsByCenter[k])) console.warn("المركز بلا مدارس:", k);
+        if (!Array.isArray(META.schoolsByCenter[k]))
+          console.warn("المركز بلا مدارس:", k);
       });
     });
     const sumCheck = { refused: 2, absent: 3 };
     const expectUnvac = sumCheck.refused + sumCheck.absent;
     if (expectUnvac !== 5) throw new Error("unvaccinated calc test failed");
-    ["aishahadi2013@gmail.com","jamelah.hadi2019@gmail.com","hajer@gmail.com","alia@gmail.com"].forEach((em) => {
+    [
+      "aishahadi2013@gmail.com",
+      "jamelah.hadi2019@gmail.com",
+      "hajer@gmail.com",
+      "alia@gmail.com",
+    ].forEach((em) => {
       if (!getUsers()[em]) console.error("مستخدم مفقود:", em);
     });
-    if (!FACILITIES.includes("رابغ")) throw new Error("facility list missing رابغ");
-    if (!META.centersByFacility["مجمع الملك عبد الله"].length) throw new Error("centers missing for KAMC");
-    console.log("✅ self-tests passed (warnings mean بيانات ناقصة في القائمة فقط)");
-  } catch (e) { console.error("self-tests error", e); }
+    if (!FACILITIES.includes("رابغ"))
+      throw new Error("facility list missing رابغ");
+    if (!META.centersByFacility["مجمع الملك عبد الله"].length)
+      throw new Error("centers missing for KAMC");
+    console.log(
+      "✅ self-tests passed (warnings mean بيانات ناقصة في القائمة فقط)"
+    );
+  } catch (e) {
+    console.error("self-tests error", e);
+  }
 }
 runSelfTests();
 
@@ -156,11 +257,12 @@ export default function HPVDemo() {
   const [responses, setRows] = useState(getResponses());
   const [schoolInfo, setSchoolInfoState] = useState(getSchoolInfo());
 
-  function signOut() { setUser(null); }
-
+  function signOut() {
+    setUser(null);
+  }
   function mapEntryToLocal(e) {
     return {
-      date: (e.created_at || "").slice(0, 10),
+      date: (e.entry_date || e.created_at || "").slice(0, 10),
       email: e.created_by || "",
       facility: e.facility || "",
       center: e.clinic_name || "",
@@ -169,10 +271,11 @@ export default function HPVDemo() {
       refused: e.refused ?? 0,
       absent: e.absent ?? 0,
       unvaccinated: e.not_accounted ?? 0,
-      sex: e.gender || "",
-      authority: e.authority || "",
-      stage: e.stage || "",
-      schoolTotal: e.school_total ?? 0,
+      // for de-dupe/sorting and “آخر تعديل”
+      ts: e.updated_at ? new Date(e.updated_at).getTime() : 0,
+      lastEdited: e.updated_at
+        ? new Date(e.updated_at).toLocaleString("ar-SA", { hour12: false })
+        : "—",
     };
   }
 
@@ -183,9 +286,12 @@ export default function HPVDemo() {
         const params = user.role === "user" ? { created_by: user.email } : {};
         const { rows } = await getEntries(params);
         const mapped = (rows || []).map(mapEntryToLocal);
-        setRows(mapped); setResponses(mapped);
+        setRows(mapped);
+        setResponses(mapped);
         log("Loaded entries from Supabase:", mapped.length);
-      } catch (e) { console.error("Failed to load entries:", e); }
+      } catch (e) {
+        console.error("Failed to load entries:", e);
+      }
     })();
   }, [user?.email, user?.role]);
 
@@ -205,14 +311,23 @@ export default function HPVDemo() {
       created_by: previewRow.email || (user?.email ?? ""),
     };
     const inserted = await submitDailyEntry(payload);
-    const localRow = { ...previewRow, date: previewRow.date || (inserted?.created_at || "").slice(0, 10) };
+    const localRow = {
+      ...previewRow,
+      date: previewRow.date || (inserted?.created_at || "").slice(0, 10),
+    };
     const next = [...responses, localRow];
-    setRows(next); setResponses(next);
+    setRows(next);
+    setResponses(next);
     return inserted;
   }
 
-  function onExport(rows) { exportToExcel(rows); }
-  function onUpdateSchoolInfo(map) { setSchoolInfoState(map); setSchoolInfo(map); }
+  function onExport(rows) {
+    exportToExcel(rows);
+  }
+  function onUpdateSchoolInfo(map) {
+    setSchoolInfoState(map);
+    setSchoolInfo(map);
+  }
 
   return (
     <div dir="rtl" className="min-h-screen bg-gray-100">
@@ -226,9 +341,16 @@ export default function HPVDemo() {
               <>
                 <div className="text-sm text-right">
                   <div className="font-semibold">{user.email}</div>
-                  <div className="text-gray-200">{user.role === "admin" ? "مشرف" : user.facility}</div>
+                  <div className="text-gray-200">
+                    {user.role === "admin" ? "مشرف" : user.facility}
+                  </div>
                 </div>
-                <button onClick={signOut} className="px-3 py-1 border rounded-xl bg-white/10 text-white">تسجيل خروج</button>
+                <button
+                  onClick={signOut}
+                  className="px-3 py-1 border rounded-xl bg-white/10 text-white"
+                >
+                  تسجيل خروج
+                </button>
               </>
             ) : null}
           </div>
@@ -239,11 +361,20 @@ export default function HPVDemo() {
         {!user && (
           <LoginPage
             onLogin={(u) => {
-              const email = (typeof u === "string" ? u : u?.email || "").toLowerCase();
+              const email = (
+                typeof u === "string" ? u : u?.email || ""
+              ).toLowerCase();
               const info = getUsers()[email];
-              if (info) setUser({ email, role: info.role, facility: info.facility });
+              if (info)
+                setUser({ email, role: info.role, facility: info.facility });
               else if (typeof u === "object" && u?.email && u?.role) setUser(u);
-              else { console.error("Login failed: user not found or invalid shape", u); setUser(null); }
+              else {
+                console.error(
+                  "Login failed: user not found or invalid shape",
+                  u
+                );
+                setUser(null);
+              }
             }}
             users={getUsers()}
           />
@@ -251,7 +382,7 @@ export default function HPVDemo() {
 
         {user && user.role === "user" && (
           <div className="grid gap-4">
-            <Card >
+            <Card>
               <UserForm
                 email={user.email}
                 facility={user.facility}
@@ -283,7 +414,8 @@ export default function HPVDemo() {
       </main>
 
       <footer className="max-w-6xl mx-auto p-4 text-center text-x text-gray-500">
-        حقوق النشر محفوظة لدى <span className="font-bold">تجمع جدة الصحي الثاني</span>
+        حقوق النشر محفوظة لدى{" "}
+        <span className="font-bold">تجمع جدة الصحي الثاني</span>
       </footer>
     </div>
   );
