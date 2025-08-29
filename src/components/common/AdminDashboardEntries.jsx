@@ -1,3 +1,4 @@
+
 import { useEffect, useMemo, useState } from 'react';
 import { getEntries } from '../lib/storage';
 
@@ -81,4 +82,3 @@ export default function AdminDashboardEntries() {
     </div>
   );
 }
-

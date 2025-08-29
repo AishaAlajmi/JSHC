@@ -1,3 +1,4 @@
+
 export async function submitDailyEntry(input) {
   const res = await fetch('/api/submissions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input) });
   if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || `Submit failed: ${res.status}`); }

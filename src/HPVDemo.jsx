@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { META, FACILITIES } from "./data/meta";
 import LoginEmail from "./components/LoginEmail";
 import Dashboard from "./components/Dashboard";
-import UserForm from "./components/UserForm";
+import UserForm from "./components/common/UserForm";
 import exportToExcel from "./utils/exportToExcel";
 
 // ===== Debug helpers (logs only) =====
