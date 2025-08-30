@@ -1,7 +1,6 @@
 // File: src/HPVDemo.jsx
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { META, FACILITIES } from "./data/meta";
-import LoginEmail from "./components/LoginEmail";
 import Dashboard from "./components/Dashboard";
 import UserForm from "./components/common/UserForm";
 import MyRecordsSmart from "./components/common/MyRecordsSmart";
@@ -30,7 +29,7 @@ const LS_USERS = "hpv_users_demo_v4";
 const LS_RESPONSES = "hpv_responses_demo_v4";
 const LS_SCHOOL_INFO = "hpv_school_info_v1";
 
-// LS helpers
+// seed demo users (local only)
 function seedUsers() {
   const existing = JSON.parse(localStorage.getItem(LS_USERS) || "null");
   if (existing) return existing;
@@ -52,17 +51,12 @@ function seedUsers() {
 function getUsers() {
   return JSON.parse(localStorage.getItem(LS_USERS) || "null") || seedUsers();
 }
-function setUsers(obj) {
-  localStorage.setItem(LS_USERS, JSON.stringify(obj));
-}
-
 function getResponses() {
   return JSON.parse(localStorage.getItem(LS_RESPONSES) || "[]");
 }
 function setResponses(rows) {
   localStorage.setItem(LS_RESPONSES, JSON.stringify(rows));
 }
-
 function getSchoolInfo() {
   return JSON.parse(localStorage.getItem(LS_SCHOOL_INFO) || "{}");
 }
@@ -70,7 +64,7 @@ function setSchoolInfo(map) {
   localStorage.setItem(LS_SCHOOL_INFO, JSON.stringify(map));
 }
 
-// seed demo
+// seed demo rows (one-time)
 if (!localStorage.getItem(LS_RESPONSES)) {
   const t = new Date().toISOString().slice(0, 10);
   const rows = [
@@ -133,14 +127,14 @@ function AdminManageUsers() {
       ...users,
       [key]: { role, facility: role === "admin" ? null : facility },
     };
-    setUsers(next);
+    localStorage.setItem(LS_USERS, JSON.stringify(next));
     setUsersState(next);
     setEmail("");
   }
   function removeKey(k) {
     const next = { ...users };
     delete next[k];
-    setUsers(next);
+    localStorage.setItem(LS_USERS, JSON.stringify(next));
     setUsersState(next);
   }
 
@@ -230,8 +224,8 @@ function runSelfTests() {
       });
     });
     const sumCheck = { refused: 2, absent: 3 };
-    const expectUnvac = sumCheck.refused + sumCheck.absent;
-    if (expectUnvac !== 5) throw new Error("unvaccinated calc test failed");
+    if (sumCheck.refused + sumCheck.absent !== 5)
+      throw new Error("unvaccinated calc test failed");
     [
       "aishahadi2013@gmail.com",
       "jamelah.hadi2019@gmail.com",
@@ -244,9 +238,7 @@ function runSelfTests() {
       throw new Error("facility list missing رابغ");
     if (!META.centersByFacility["مجمع الملك عبد الله"].length)
       throw new Error("centers missing for KAMC");
-    console.log(
-      "✅ self-tests passed (warnings mean بيانات ناقصة في القائمة فقط)"
-    );
+    console.log("✅ self-tests passed");
   } catch (e) {
     console.error("self-tests error", e);
   }
@@ -262,12 +254,11 @@ export default function HPVDemo() {
     setUser(null);
   }
 
-  // ⬇️ FIXED: include created_at & updated_at EXACT as DB, and a ts for latest-wins
+  // Map Supabase row to local shape (keep DB timestamps exact)
   function mapEntryToLocal(e) {
     const created = e.created_at || null;
     const updated = e.updated_at || null;
     const entryDate = (e.entry_date || created || "").slice(0, 10);
-
     return {
       date: entryDate,
       email: e.created_by || "",
@@ -278,18 +269,15 @@ export default function HPVDemo() {
       refused: e.refused ?? 0,
       absent: e.absent ?? 0,
       unvaccinated: e.not_accounted ?? 0,
-
-      // keep what DB sends (no formatting)
       created_at: created,
       updated_at: updated,
-
-      // for de-duplication/sorting latest edit
       ts:
         (updated ? Date.parse(updated) : created ? Date.parse(created) : 0) ||
         0,
     };
   }
 
+  // Load from Supabase after login
   useEffect(() => {
     if (!user) return;
     (async () => {
@@ -306,6 +294,7 @@ export default function HPVDemo() {
     })();
   }, [user?.email, user?.role]);
 
+  // Submit new row
   async function addRow(previewRow) {
     const payload = {
       facility: previewRow.facility,
@@ -349,7 +338,7 @@ export default function HPVDemo() {
     setSchoolInfo(map);
   }
 
-  // ⬇️ NEW: when a row is edited in the table, merge it locally
+  // Patch local state after row edit
   function handleRowEdited(patch) {
     setRows((prev) =>
       prev.map((r) =>
@@ -374,7 +363,6 @@ export default function HPVDemo() {
   return (
     <div dir="rtl" className="min-h-screen bg-gray-100">
       <BrandStyles />
-
       <header className="sticky top-0 z-10 text-white brand-gradient">
         <div className="max-w-6xl mx-auto px-4 py-3 flex items-center gap-3">
           <div className="font-bold">نظام حملة الورم الحليمي</div>
@@ -411,10 +399,7 @@ export default function HPVDemo() {
                 setUser({ email, role: info.role, facility: info.facility });
               else if (typeof u === "object" && u?.email && u?.role) setUser(u);
               else {
-                console.error(
-                  "Login failed: user not found or invalid shape",
-                  u
-                );
+                console.error("Login failed", u);
                 setUser(null);
               }
             }}
@@ -430,13 +415,13 @@ export default function HPVDemo() {
                 facility={user.facility}
                 meta={META}
                 onSubmit={addRow}
-                schoolInfo={schoolInfo}
+                schoolInfo={getSchoolInfo()}
               />
             </Card>
             <MyRecordsSmart
               email={user.email}
               rows={responses}
-              onRowEdited={handleRowEdited} // ⬅️ pass back edits
+              onRowEdited={handleRowEdited}
             />
           </div>
         )}
