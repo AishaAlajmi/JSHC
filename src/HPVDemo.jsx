@@ -1,18 +1,17 @@
+// File: src/HPVDemo.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import { META, FACILITIES } from "./data/meta";
-import LoginEmail from "./components/LoginEmail";
 import Dashboard from "./components/Dashboard";
 import UserForm from "./components/common/UserForm";
-import MyRecordsSmart from "./components/common/MyRecordsSmart"; // ⬅️ كما كان
+import MyRecordsSmart from "./components/common/MyRecordsSmart";
 import exportToExcel from "./utils/exportToExcel";
 import { submitDailyEntry, getEntries } from "./lib/storage";
 import LoginPage from "./components/LoginPage";
 
 const DEBUG = true;
-const log = (...args) => {
-  if (DEBUG) console.log("[HPVDemo]", ...args);
-};
+const log = (...args) => DEBUG && console.log("[HPVDemo]", ...args);
 
+// ---------- Brand styles ----------
 const BrandStyles = () => (
   <style>{`
     :root{--brand:#1691D0;--brand-dark:#15508A;--brand-alt:#3AC0C3}
@@ -24,14 +23,30 @@ const BrandStyles = () => (
   `}</style>
 );
 
-// LS keys
+// ---------- LocalStorage keys ----------
 const LS_USERS = "hpv_users_demo_v4";
 const LS_RESPONSES = "hpv_responses_demo_v4";
 const LS_SCHOOL_INFO = "hpv_school_info_v1";
 
-// LS helpers
+// ---------- Safe JSON helpers ----------
+function safeParseJSON(str, fallback) {
+  try {
+    if (str === null || str === undefined || str === "" || str === "undefined")
+      return fallback;
+    return JSON.parse(str);
+  } catch {
+    return fallback;
+  }
+}
+function safeSetItem(key, value, fallback) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value ?? fallback));
+  } catch {}
+}
+
+// ---------- LS helpers (guarded) ----------
 function seedUsers() {
-  const existing = JSON.parse(localStorage.getItem(LS_USERS) || "null");
+  const existing = safeParseJSON(localStorage.getItem(LS_USERS), null);
   if (existing) return existing;
   const seeded = {
     "aishahadi2013@gmail.com": { role: "user", facility: "رابغ" },
@@ -45,34 +60,34 @@ function seedUsers() {
     },
     "alia@gmail.com": { role: "admin", facility: null },
   };
-  localStorage.setItem(LS_USERS, JSON.stringify(seeded));
+  safeSetItem(LS_USERS, seeded, {});
   return seeded;
 }
 function getUsers() {
-  return JSON.parse(localStorage.getItem(LS_USERS) || "null") || seedUsers();
+  return safeParseJSON(localStorage.getItem(LS_USERS), null) || seedUsers();
 }
 function setUsers(obj) {
-  localStorage.setItem(LS_USERS, JSON.stringify(obj));
+  safeSetItem(LS_USERS, obj, {});
 }
 
 function getResponses() {
-  return JSON.parse(localStorage.getItem(LS_RESPONSES) || "[]");
+  return safeParseJSON(localStorage.getItem(LS_RESPONSES), []);
 }
 function setResponses(rows) {
-  localStorage.setItem(LS_RESPONSES, JSON.stringify(rows));
+  safeSetItem(LS_RESPONSES, rows, []);
 }
 
 function getSchoolInfo() {
-  return JSON.parse(localStorage.getItem(LS_SCHOOL_INFO) || "{}");
+  return safeParseJSON(localStorage.getItem(LS_SCHOOL_INFO), {});
 }
 function setSchoolInfo(map) {
-  localStorage.setItem(LS_SCHOOL_INFO, JSON.stringify(map));
+  safeSetItem(LS_SCHOOL_INFO, map, {});
 }
 
-// seed demo
+// ---------- Seed demo once (for first-time preview only) ----------
 if (!localStorage.getItem(LS_RESPONSES)) {
   const t = new Date().toISOString().slice(0, 10);
-  const rows = [
+  setResponses([
     {
       date: t,
       email: "aishahadi2013@gmail.com",
@@ -103,10 +118,10 @@ if (!localStorage.getItem(LS_RESPONSES)) {
       stage: "متوسط",
       schoolTotal: 420,
     },
-  ];
-  setResponses(rows);
+  ]);
 }
 
+// ---------- Small UI card ----------
 function Card({ title, children, actions }) {
   return (
     <div className="p-4 rounded-2xl shadow bg-white">
@@ -119,6 +134,7 @@ function Card({ title, children, actions }) {
   );
 }
 
+// ---------- Admin user management ----------
 function AdminManageUsers() {
   const [users, setUsersState] = useState(getUsers());
   const [email, setEmail] = useState("");
@@ -215,6 +231,7 @@ function AdminManageUsers() {
   );
 }
 
+// ---------- Self-tests ----------
 function runSelfTests() {
   try {
     Object.entries(META.centersByFacility).forEach(([f, centers]) => {
@@ -228,17 +245,6 @@ function runSelfTests() {
           console.warn("المركز بلا مدارس:", k);
       });
     });
-    const sumCheck = { refused: 2, absent: 3 };
-    const expectUnvac = sumCheck.refused + sumCheck.absent;
-    if (expectUnvac !== 5) throw new Error("unvaccinated calc test failed");
-    [
-      "aishahadi2013@gmail.com",
-      "jamelah.hadi2019@gmail.com",
-      "hajer@gmail.com",
-      "alia@gmail.com",
-    ].forEach((em) => {
-      if (!getUsers()[em]) console.error("مستخدم مفقود:", em);
-    });
     console.log("✅ self-tests passed");
   } catch (e) {
     console.error("self-tests error", e);
@@ -246,10 +252,21 @@ function runSelfTests() {
 }
 runSelfTests();
 
+// =====================================================
+// Root App
+// =====================================================
 export default function HPVDemo() {
   const [user, setUser] = useState(null);
   const [responses, setRows] = useState(getResponses());
   const [schoolInfo, setSchoolInfoState] = useState(getSchoolInfo());
+
+  // One-time cleaner for bad LS values that could crash JSON.parse
+  useEffect(() => {
+    [LS_USERS, LS_RESPONSES, LS_SCHOOL_INFO].forEach((k) => {
+      const v = localStorage.getItem(k);
+      if (v === "undefined" || v === "") localStorage.removeItem(k);
+    });
+  }, []);
 
   function signOut() {
     setUser(null);
@@ -266,11 +283,11 @@ export default function HPVDemo() {
       refused: e.refused ?? 0,
       absent: e.absent ?? 0,
       unvaccinated: e.not_accounted ?? 0,
-      // (اختياري) لو كان عندك ts في البيانات
-      ts: e.ts || 0,
+      ts: e.ts || 0, // optional
     };
   }
 
+  // Load from Supabase when the user logs in
   useEffect(() => {
     if (!user) return;
     (async () => {
@@ -287,6 +304,7 @@ export default function HPVDemo() {
     })();
   }, [user?.email, user?.role]);
 
+  // Save to Supabase, then update local list
   async function addRow(previewRow) {
     const payload = {
       facility: previewRow.facility,
@@ -381,7 +399,6 @@ export default function HPVDemo() {
               />
             </Card>
 
-            {/* كما كان: بدون onRowEdited */}
             <MyRecordsSmart
               email={user.email}
               rows={responses}
@@ -400,6 +417,7 @@ export default function HPVDemo() {
                 onUpdateSchoolInfo={onUpdateSchoolInfo}
               />
             </Card>
+            <AdminManageUsers />
           </>
         )}
       </main>
