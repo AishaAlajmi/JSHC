@@ -1,5 +1,7 @@
+// File: src/components/common/UserForm.jsx
 import React, { useEffect, useState, useMemo } from "react";
 import { submitDailyEntry } from "../../lib/storage";
+import { getSchoolStatic } from "../../data/meta"; // <- fetch fixed info
 
 const DEBUG = true;
 const log = (...args) => {
@@ -123,21 +125,37 @@ export default function UserForm({
     []
   );
 
+  // keep center valid for current facility
   useEffect(() => {
-    setCenter(centers[0] || "");
-  }, [facility, meta]);
+    setCenter((curr) => (centers.includes(curr) ? curr : centers[0] || ""));
+  }, [facility, meta]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // default the first school whenever center changes
   useEffect(() => {
     const s =
       (meta?.schoolsByCenter?.[facility + "::" + center] || [""])[0] || "";
     setSchool(s);
   }, [center, facility, meta]);
 
-  const fixed = schoolInfo[school] || {
-    sex: "",
-    authority: "",
-    stage: "",
-    schoolTotal: 0,
-  };
+  // Auto-fill “الحقول الثابتة” from meta; fallback to schoolInfo (if provided)
+  const fixedMeta = useMemo(
+    () => getSchoolStatic(facility, center, school),
+    [facility, center, school]
+  );
+
+  const fixed = useMemo(() => {
+    const fallback = schoolInfo?.[school] || {};
+    return {
+      sex: fixedMeta.gender || fallback.sex || "",
+      authority: fixedMeta.authority || fallback.authority || "",
+      stage: fixedMeta.stage || fallback.stage || "",
+      schoolTotal:
+        (Number.isFinite(fixedMeta.total) ? fixedMeta.total : 0) ||
+        Number(fallback.schoolTotal) ||
+        0,
+    };
+  }, [fixedMeta, school, schoolInfo]);
+
   const unvaccinated =
     (numberOrNull(refused) || 0) + (numberOrNull(absent) || 0);
 
@@ -164,7 +182,6 @@ export default function UserForm({
       setStatus({ type: "error", msg: "تأكد من تعبئة الحقول بشكل صحيح" });
       return;
     }
-    // Optional business rule: totals should be sensible
     const total = Number(fixed.schoolTotal) || 0;
     if (total && v + r + a > total) {
       setStatus({
@@ -195,9 +212,7 @@ export default function UserForm({
     log("previewData", data);
   }
 
-  // ---- UPDATED: surface real API errors clearly
   async function saveToAPI(p) {
-    // Ensure numbers are numbers
     const input = {
       facility: p.facility,
       clinic_name: p.center,
@@ -214,20 +229,15 @@ export default function UserForm({
     };
 
     log("submitDailyEntry payload ->", input);
-
-    // accept both shapes: {data,error} or direct throw
     const res = await submitDailyEntry(input);
 
-    // If your lib returns { data, error }
     if (res && typeof res === "object" && ("error" in res || "data" in res)) {
       if (res.error) {
         const message = res.error.message || res.error || "فشل حفظ السجل";
         throw new Error(message);
       }
-      return res.data ?? res; // ok
+      return res.data ?? res;
     }
-
-    // If the lib throws on failure, reaching here means success.
     return res;
   }
 
@@ -244,7 +254,6 @@ export default function UserForm({
       setPreview(null);
       setStatus({ type: "ok", msg: "تم الحفظ بنجاح" });
     } catch (e) {
-      // ---- UPDATED: show the exact reason from backend
       const raw = e?.message || String(e);
       console.error("Save failed:", e);
       setStatus({ type: "error", msg: raw });
@@ -301,11 +310,7 @@ export default function UserForm({
         <div className="grid md:grid-cols-2 gap-4">
           <div className="flex flex-col">
             <label className="hpv-label">المنشأة الصحية</label>
-            <input
-              value={facility}
-              disabled
-              className="hpv-input bg-gray-100"
-            />
+            <input value={facility} disabled className="hpv-input bg-gray-100" />
             <span className="hpv-help mt-1">
               يتم تحديدها تلقائيًا حسب صلاحياتك.
             </span>
@@ -331,6 +336,9 @@ export default function UserForm({
               onChange={(e) => setSchool(e.target.value)}
               className="hpv-select"
             >
+              {schools.length === 0 && (
+                <option value="">— لا توجد مدارس لهذا المركز —</option>
+              )}
               {schools.map((s) => (
                 <option key={s} value={s}>
                   {s}
@@ -342,10 +350,7 @@ export default function UserForm({
       </Card>
 
       {/* fixed info */}
-      <Card
-        title="الحقول الثابتة"
-        subtitle="تُعرض للمرجع ولا يمكن تعديلها هنا."
-      >
+      <Card title="الحقول الثابتة" subtitle="تُعرض للمرجع ولا يمكن تعديلها هنا.">
         <div className="grid md:grid-cols-4 gap-3 text-sm">
           <div className="flex flex-col">
             <label className="hpv-label">الجنس</label>
@@ -420,11 +425,7 @@ export default function UserForm({
           </div>
           <div className="flex flex-col">
             <label className="hpv-label">غير مطعّم (محسوب)</label>
-            <input
-              value={unvaccinated}
-              disabled
-              className="hpv-input bg-gray-100"
-            />
+            <input value={unvaccinated} disabled className="hpv-input bg-gray-100" />
           </div>
         </div>
         <div className="mt-3">
