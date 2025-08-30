@@ -65,6 +65,12 @@ const toInt = (v) =>
 
 // show exactly what DB sends (or "-")
 const rawOrDash = (v) => (v ? String(v) : "—");
+// add this tiny helper near the top (below rawOrDash)
+const onlyHM = (s) => {
+  if (!s) return "—";
+  const m = String(s).match(/T(\d{2}):(\d{2})/); // read HH:MM straight from DB ISO string
+  return m ? `${m[1]}:${m[2]}` : "—";
+};
 
 export default function MyRecordsSmart({ email, rows, onExport, onRowEdited }) {
   const [filters, setFilters] = useState({
@@ -305,6 +311,7 @@ export default function MyRecordsSmart({ email, rows, onExport, onRowEdited }) {
           {/* table */}
           <div className="hpv-table-wrap">
             <table className="hpv-table text-sm">
+              {/* table header */}
               <thead>
                 <tr>
                   <th>التاريخ</th>
@@ -314,14 +321,14 @@ export default function MyRecordsSmart({ email, rows, onExport, onRowEdited }) {
                   <th>رفض</th>
                   <th>غياب</th>
                   <th>غير مطعّم</th>
-                  <th>أُنشئ في</th> {/* created_at EXACT */}
-                  <th>آخر تعديل</th> {/* updated_at or "—" */}
+                  <th>آخر تعديل</th> {/* ONLY time HH:MM */}
                   <th>إجراء</th>
                 </tr>
               </thead>
               <tbody>
                 {sorted.slice(-500).map((r) => (
                   <tr key={`${r.date}|${r.center}|${r.school}`}>
+                    {/* show the entry date (Gregorian) */}
                     <td className="whitespace-nowrap">{r.date}</td>
                     <td>{r.center}</td>
                     <td>{r.school}</td>
@@ -329,12 +336,12 @@ export default function MyRecordsSmart({ email, rows, onExport, onRowEdited }) {
                     <td>{r.refused}</td>
                     <td>{r.absent}</td>
                     <td>{r.unvaccinated}</td>
+
+                    {/* show only HH:MM from updated_at, or "—" when null */}
                     <td className="whitespace-nowrap">
-                      {rawOrDash(r.created_at)}
+                      {onlyHM(r.updated_at)}
                     </td>
-                    <td className="whitespace-nowrap">
-                      {rawOrDash(r.updated_at)}
-                    </td>
+
                     <td>
                       <button
                         className="hpv-btn hpv-btn-ghost"
@@ -347,7 +354,8 @@ export default function MyRecordsSmart({ email, rows, onExport, onRowEdited }) {
                 ))}
                 {sorted.length === 0 && (
                   <tr>
-                    <td colSpan={10} className="text-center text-gray-500 py-8">
+                    {/* columns now = 9 */}
+                    <td colSpan={9} className="text-center text-gray-500 py-8">
                       لا توجد سجلات مطابقة للفلاتر الحالية.
                     </td>
                   </tr>
