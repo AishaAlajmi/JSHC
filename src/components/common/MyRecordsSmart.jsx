@@ -1,7 +1,6 @@
-// File: src/components/common/MyRecordsSmart.jsx
 import React, { useMemo, useState } from "react";
 
-/** Local styles */
+/** Local styles (kept as-is) */
 const LocalStyles = () => (
   <style>{`
     .hpv-screen {
@@ -64,12 +63,8 @@ function Field({ label, children }) {
 const toInt = (v) =>
   Number.isFinite(Number(v)) && Number(v) >= 0 ? Number(v) : 0;
 
-// Format `YYYY-MM-DD HH:MM` from ISO string; or dash
-const fmtYMDHM = (s) => {
-  if (!s) return "—";
-  const m = String(s).match(/^(\d{4}-\d{2}-\d{2})[T ](\d{2}):(\d{2})/);
-  return m ? `${m[1]} ${m[2]}:${m[3]}` : "—";
-};
+// show exactly what DB sends (or "-")
+const rawOrDash = (v) => (v ? String(v) : "—");
 
 export default function MyRecordsSmart({ email, rows, onExport, onRowEdited }) {
   const [filters, setFilters] = useState({
@@ -80,7 +75,7 @@ export default function MyRecordsSmart({ email, rows, onExport, onRowEdited }) {
     dir: "desc",
   });
 
-  // Edit modal
+  // Edit modal state
   const [editOpen, setEditOpen] = useState(false);
   const [editRow, setEditRow] = useState(null);
   const [ev, setEv] = useState({ vaccinated: "", refused: "", absent: "" });
@@ -96,8 +91,8 @@ export default function MyRecordsSmart({ email, rows, onExport, onRowEdited }) {
       if (
         q &&
         !(
-          String(r.center).toLowerCase().includes(q) ||
-          String(r.school).toLowerCase().includes(q)
+          `${r.center}`.toLowerCase().includes(q) ||
+          `${r.school}`.toLowerCase().includes(q)
         )
       )
         return false;
@@ -158,7 +153,7 @@ export default function MyRecordsSmart({ email, rows, onExport, onRowEdited }) {
     setEditOpen(true);
   }
 
-  // Save edit to API (server upserts); then push patch to parent
+  // Save edit via API (server does UPSERT); then push patch up
   async function saveEdit() {
     if (!editRow) return;
     const payload = {
@@ -184,8 +179,10 @@ export default function MyRecordsSmart({ email, rows, onExport, onRowEdited }) {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || "Failed to save entry");
+
       setEditOpen(false);
 
+      // tell parent the exact updated_at string from DB
       onRowEdited?.({
         ...editRow,
         vaccinated: payload.vaccinated,
@@ -212,7 +209,7 @@ export default function MyRecordsSmart({ email, rows, onExport, onRowEdited }) {
         </div>
 
         <div className="body">
-          {/* Topline */}
+          {/* topline */}
           <div className="hpv-topline">
             <span className="hpv-chip ok">مطعّم: {totals.v}</span>
             <span className="hpv-chip">رفض: {totals.r}</span>
@@ -230,7 +227,7 @@ export default function MyRecordsSmart({ email, rows, onExport, onRowEdited }) {
             )}
           </div>
 
-          {/* Filters */}
+          {/* filters */}
           <div className="grid gap-3 md:grid-cols-6 items-end mb-3 hpv-grid">
             <Field label="من">
               <input
@@ -305,7 +302,7 @@ export default function MyRecordsSmart({ email, rows, onExport, onRowEdited }) {
             </div>
           </div>
 
-          {/* Table */}
+          {/* table */}
           <div className="hpv-table-wrap">
             <table className="hpv-table text-sm">
               <thead>
@@ -317,16 +314,15 @@ export default function MyRecordsSmart({ email, rows, onExport, onRowEdited }) {
                   <th>رفض</th>
                   <th>غياب</th>
                   <th>غير مطعّم</th>
-                  <th>آخر تعديل</th>
+                  <th>أُنشئ في</th> {/* created_at EXACT */}
+                  <th>آخر تعديل</th> {/* updated_at or "—" */}
                   <th>إجراء</th>
                 </tr>
               </thead>
               <tbody>
                 {sorted.slice(-500).map((r) => (
                   <tr key={`${r.date}|${r.center}|${r.school}`}>
-                    <td className="whitespace-nowrap">
-                      {fmtYMDHM(r.created_at)}
-                    </td>
+                    <td className="whitespace-nowrap">{r.date}</td>
                     <td>{r.center}</td>
                     <td>{r.school}</td>
                     <td>{r.vaccinated}</td>
@@ -334,7 +330,10 @@ export default function MyRecordsSmart({ email, rows, onExport, onRowEdited }) {
                     <td>{r.absent}</td>
                     <td>{r.unvaccinated}</td>
                     <td className="whitespace-nowrap">
-                      {fmtYMDHM(r.updated_at)}
+                      {rawOrDash(r.created_at)}
+                    </td>
+                    <td className="whitespace-nowrap">
+                      {rawOrDash(r.updated_at)}
                     </td>
                     <td>
                       <button
@@ -348,7 +347,7 @@ export default function MyRecordsSmart({ email, rows, onExport, onRowEdited }) {
                 ))}
                 {sorted.length === 0 && (
                   <tr>
-                    <td colSpan={9} className="text-center text-gray-500 py-8">
+                    <td colSpan={10} className="text-center text-gray-500 py-8">
                       لا توجد سجلات مطابقة للفلاتر الحالية.
                     </td>
                   </tr>
@@ -383,9 +382,8 @@ export default function MyRecordsSmart({ email, rows, onExport, onRowEdited }) {
               {editRow && (
                 <>
                   <div className="text-sm mb-3 text-gray-600">
-                    <b>التاريخ:</b> {fmtYMDHM(editRow.created_at)} —{" "}
-                    <b>المركز:</b> {editRow.center} — <b>المدرسة:</b>{" "}
-                    {editRow.school}
+                    <b>التاريخ:</b> {editRow.date} — <b>المركز:</b>{" "}
+                    {editRow.center} — <b>المدرسة:</b> {editRow.school}
                   </div>
                   <div className="hpv-grid">
                     <Field label="عدد المطعّمين">
