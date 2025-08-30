@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from "react";
 
-/** ─────────────────────────  Local, Arabic-friendly styles  ───────────────────────── */
+/** Local, Arabic-friendly styles */
 const LocalStyles = () => (
   <style>{`
     .hpv-screen {
@@ -65,14 +65,18 @@ function Field({ label, children }) {
 /* Helpers */
 const toInt = (v) =>
   Number.isFinite(Number(v)) && Number(v) >= 0 ? Number(v) : 0;
-const fmtDT = (s) => {
+
+// strict "YYYY-MM-DD HH:MM" (Gregorian) or "—"
+const fmtYMD_HM = (s) => {
   if (!s) return "—";
   const d = new Date(s);
-  if (isNaN(d)) return s;
-  return d.toLocaleString("ar-SA", { hour12: false });
+  if (isNaN(d)) return "—";
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(
+    d.getHours()
+  )}:${pad(d.getMinutes())}`;
 };
 
-/** ─────────────────────────────────  Component  ───────────────────────────────── */
 export default function MyRecordsSmart({ email, rows, onExport, onRowEdited }) {
   const [filters, setFilters] = useState({
     from: "",
@@ -165,15 +169,12 @@ export default function MyRecordsSmart({ email, rows, onExport, onRowEdited }) {
   async function saveEdit() {
     if (!editRow) return;
     const payload = {
-      // required identity fields (server upsert on daily key)
       facility: editRow.facility,
       clinic_name: editRow.center,
       school_name: editRow.school,
-      // keep fixed info if you have them on rows (else will be null)
       gender: editRow.sex || null,
       authority: editRow.authority || null,
       stage: editRow.stage || null,
-      // edited numbers
       vaccinated: toInt(ev.vaccinated),
       refused: toInt(ev.refused),
       absent: toInt(ev.absent),
@@ -195,7 +196,6 @@ export default function MyRecordsSmart({ email, rows, onExport, onRowEdited }) {
       const updated = await res.json(); // should include updated_at/created_at
       setEditOpen(false);
 
-      // Notify parent to merge the change into state, or reload as a fallback
       if (typeof onRowEdited === "function") {
         onRowEdited({
           ...editRow,
@@ -209,7 +209,6 @@ export default function MyRecordsSmart({ email, rows, onExport, onRowEdited }) {
             new Date().toISOString(),
         });
       } else {
-        // last resort so the table reflects the change
         window.location.reload();
       }
     } catch (e) {
@@ -240,7 +239,7 @@ export default function MyRecordsSmart({ email, rows, onExport, onRowEdited }) {
                 type="button"
                 className="hpv-btn hpv-btn-ghost"
                 onClick={() => onExport(sorted)}
-                title="تصدير السجلات المفلترة"
+                title="تصدير"
               >
                 تصدير
               </button>
@@ -338,7 +337,12 @@ export default function MyRecordsSmart({ email, rows, onExport, onRowEdited }) {
               <tbody>
                 {sorted.slice(-500).map((r) => (
                   <tr key={`${r.date}|${r.center}|${r.school}`}>
-                    <td className="whitespace-nowrap">{r.date}</td>
+                    {/* show created_at (or date-only if missing) in strict Y-M-D HM */}
+                    <td className="whitespace-nowrap">
+                      {r.created_at
+                        ? fmtYMD_HM(r.created_at)
+                        : `${r.date} 00:00`}
+                    </td>
                     <td>{r.center}</td>
                     <td>{r.school}</td>
                     <td>{r.vaccinated}</td>
@@ -346,7 +350,7 @@ export default function MyRecordsSmart({ email, rows, onExport, onRowEdited }) {
                     <td>{r.absent}</td>
                     <td>{r.unvaccinated}</td>
                     <td className="whitespace-nowrap">
-                      {fmtDT(r.updated_at || r.created_at || r.ts)}
+                      {fmtYMD_HM(r.updated_at)}
                     </td>
                     <td>
                       <button
@@ -395,8 +399,10 @@ export default function MyRecordsSmart({ email, rows, onExport, onRowEdited }) {
               {editRow && (
                 <>
                   <div className="text-sm mb-3 text-gray-600">
-                    <b>التاريخ:</b> {editRow.date} — <b>المركز:</b>{" "}
-                    {editRow.center} — <b>المدرسة:</b> {editRow.school}
+                    <b>التاريخ:</b>{" "}
+                    {fmtYMD_HM(editRow.created_at) || `${editRow.date} 00:00`} —{" "}
+                    <b>المركز:</b> {editRow.center} — <b>المدرسة:</b>{" "}
+                    {editRow.school}
                   </div>
                   <div className="hpv-grid">
                     <Field label="عدد المطعّمين">
