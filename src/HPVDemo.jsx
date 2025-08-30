@@ -5,13 +5,13 @@ import Dashboard from "./components/Dashboard";
 import UserForm from "./components/common/UserForm";
 import MyRecordsSmart from "./components/common/MyRecordsSmart";
 import exportToExcel from "./utils/exportToExcel";
-import { submitDailyEntry, getEntries, UPSERT_MODES } from "./lib/storage";
+import { submitDailyEntry, getEntries } from "./lib/storage";
 import LoginPage from "./components/LoginPage";
 
 const DEBUG = true;
 const log = (...args) => DEBUG && console.log("[HPVDemo]", ...args);
 
-// ---------- Brand styles ----------
+// ---------------- Brand styles ----------------
 const BrandStyles = () => (
   <style>{`
     :root{--brand:#1691D0;--brand-dark:#15508A;--brand-alt:#3AC0C3}
@@ -23,28 +23,24 @@ const BrandStyles = () => (
   `}</style>
 );
 
-// ---------- LocalStorage keys ----------
+// ---------------- Minimal LS (for users & school meta only) ----------------
 const LS_USERS = "hpv_users_demo_v4";
-const LS_RESPONSES = "hpv_responses_demo_v4";
 const LS_SCHOOL_INFO = "hpv_school_info_v1";
 
-// ---------- Safe JSON helpers ----------
 function safeParseJSON(str, fallback) {
   try {
-    if (str === null || str === undefined || str === "" || str === "undefined")
-      return fallback;
+    if (str == null || str === "" || str === "undefined") return fallback;
     return JSON.parse(str);
   } catch {
     return fallback;
   }
 }
-function safeSetItem(key, value, fallback) {
+function safeSetItem(k, v, fb) {
   try {
-    localStorage.setItem(key, JSON.stringify(value ?? fallback));
+    localStorage.setItem(k, JSON.stringify(v ?? fb));
   } catch {}
 }
 
-// ---------- LS helpers (guarded) ----------
 function seedUsers() {
   const existing = safeParseJSON(localStorage.getItem(LS_USERS), null);
   if (existing) return existing;
@@ -66,17 +62,6 @@ function seedUsers() {
 function getUsers() {
   return safeParseJSON(localStorage.getItem(LS_USERS), null) || seedUsers();
 }
-function setUsers(obj) {
-  safeSetItem(LS_USERS, obj, {});
-}
-
-function getResponses() {
-  return safeParseJSON(localStorage.getItem(LS_RESPONSES), []);
-}
-function setResponses(rows) {
-  safeSetItem(LS_RESPONSES, rows, []);
-}
-
 function getSchoolInfo() {
   return safeParseJSON(localStorage.getItem(LS_SCHOOL_INFO), {});
 }
@@ -84,44 +69,7 @@ function setSchoolInfo(map) {
   safeSetItem(LS_SCHOOL_INFO, map, {});
 }
 
-// ---------- Seed demo once ----------
-if (!localStorage.getItem(LS_RESPONSES)) {
-  const t = new Date().toISOString().slice(0, 10);
-  setResponses([
-    {
-      date: t,
-      email: "aishahadi2013@gmail.com",
-      facility: "رابغ",
-      center: "رابغ",
-      school: "الابتدائية الاولى",
-      vaccinated: 12,
-      refused: 1,
-      absent: 2,
-      unvaccinated: 3,
-      sex: "بنات",
-      authority: "حكومي",
-      stage: "متوسط",
-      schoolTotal: 300,
-    },
-    {
-      date: t,
-      email: "jamelah.hadi2019@gmail.com",
-      facility: "مجمع الملك عبد الله",
-      center: "مركز صحي بريمان",
-      school: "المتوسطة الثانية بعد المئة",
-      vaccinated: 18,
-      refused: 2,
-      absent: 2,
-      unvaccinated: 4,
-      sex: "بنات",
-      authority: "حكومي",
-      stage: "متوسط",
-      schoolTotal: 420,
-    },
-  ]);
-}
-
-// ---------- Small UI card ----------
+// Small UI wrapper
 function Card({ title, children, actions }) {
   return (
     <div className="p-4 rounded-2xl shadow bg-white">
@@ -134,7 +82,7 @@ function Card({ title, children, actions }) {
   );
 }
 
-// ---------- Admin user management ----------
+// Admin emails manager
 function AdminManageUsers() {
   const [users, setUsersState] = useState(getUsers());
   const [email, setEmail] = useState("");
@@ -148,14 +96,14 @@ function AdminManageUsers() {
       ...users,
       [key]: { role, facility: role === "admin" ? null : facility },
     };
-    setUsers(next);
+    safeSetItem(LS_USERS, next, {});
     setUsersState(next);
     setEmail("");
   }
   function removeKey(k) {
     const next = { ...users };
     delete next[k];
-    setUsers(next);
+    safeSetItem(LS_USERS, next, {});
     setUsersState(next);
   }
 
@@ -231,17 +179,15 @@ function AdminManageUsers() {
   );
 }
 
-// =====================================================
-// Root App
-// =====================================================
+// ================= App =================
 export default function HPVDemo() {
-  const [user, setUser] = useState(null);
-  const [responses, setRows] = useState(getResponses());
+  const [user, setUser] = useState(null); // {email, role, facility}
+  const [responses, setRows] = useState([]); // <— start empty; no LS seed
   const [schoolInfo, setSchoolInfoState] = useState(getSchoolInfo());
 
-  // Clean bad LS values that could crash JSON.parse
+  // Safety: clean up any old broken values
   useEffect(() => {
-    [LS_USERS, LS_RESPONSES, LS_SCHOOL_INFO].forEach((k) => {
+    ["hpv_responses_demo_v4"].forEach((k) => {
       const v = localStorage.getItem(k);
       if (v === "undefined" || v === "") localStorage.removeItem(k);
     });
@@ -249,8 +195,10 @@ export default function HPVDemo() {
 
   function signOut() {
     setUser(null);
+    setRows([]); // clear UI on logout
   }
 
+  // map DB → UI row
   function mapEntryToLocal(e) {
     return {
       date: (e.entry_date || e.created_at || "").slice(0, 10),
@@ -266,7 +214,7 @@ export default function HPVDemo() {
     };
   }
 
-  // Load from Supabase when the user logs in
+  // Load from Supabase on login
   useEffect(() => {
     if (!user) return;
     (async () => {
@@ -274,8 +222,7 @@ export default function HPVDemo() {
         const params = user.role === "user" ? { created_by: user.email } : {};
         const { rows } = await getEntries(params);
         const mapped = (rows || []).map(mapEntryToLocal);
-        setRows(mapped);
-        setResponses(mapped);
+        setRows(mapped); // replace, don't append
         log("Loaded entries from Supabase:", mapped.length);
       } catch (e) {
         console.error("Failed to load entries:", e);
@@ -283,25 +230,23 @@ export default function HPVDemo() {
     })();
   }, [user?.email, user?.role]);
 
-  // --- local upsert helper to avoid duplicates in UI ---
-  function upsertLocal(list, row, currentUserEmail) {
-    const key = (r) => `${r.email}||${r.center}||${r.school}`;
-    const targetKey = key({
-      email: currentUserEmail,
-      center: row.center,
-      school: row.school,
-    });
-    const idx = list.findIndex((r) => key(r) === targetKey);
-    const normalized = { ...row, email: currentUserEmail };
+  // Local upsert helper (email + center + school)
+  function upsertLocalRow(list, row) {
+    const idx = list.findIndex(
+      (r) =>
+        r.email === (row.email || user?.email) &&
+        r.center === row.center &&
+        r.school === row.school
+    );
     if (idx >= 0) {
-      const copy = [...list];
-      copy[idx] = normalized; // replace existing
-      return copy;
+      const next = [...list];
+      next[idx] = { ...next[idx], ...row };
+      return next;
     }
-    return [...list, normalized]; // add new
+    return [...list, row];
   }
 
-  // Save to Supabase (upsert by pair), then update local list
+  // Save to Supabase, then upsert locally
   async function addRow(previewRow) {
     const payload = {
       facility: previewRow.facility,
@@ -318,27 +263,19 @@ export default function HPVDemo() {
       created_by: previewRow.email || (user?.email ?? ""),
     };
 
-    // server upsert by (created_by, clinic_name, school_name)
-    const saved = await submitDailyEntry(payload, {
-      mode: UPSERT_MODES.PER_PAIR,
-    });
+    // server upsert by (center+school)
+    const inserted = await submitDailyEntry(payload, { mode: "pair" });
 
-    // normalize date into UI row
+    // make a UI row and upsert locally
     const localRow = {
       ...previewRow,
+      email: user?.email || previewRow.email || "",
       date:
         previewRow.date ||
-        (saved?.entry_date || saved?.created_at || "").slice(0, 10),
+        (inserted?.created_at || inserted?.entry_date || "").slice(0, 10),
     };
-
-    const next = upsertLocal(
-      responses,
-      localRow,
-      user?.email || previewRow.email
-    );
-    setRows(next);
-    setResponses(next);
-    return saved;
+    setRows((prev) => upsertLocalRow(prev, localRow));
+    return inserted;
   }
 
   function onExport(rows) {
@@ -388,10 +325,7 @@ export default function HPVDemo() {
               if (info)
                 setUser({ email, role: info.role, facility: info.facility });
               else if (typeof u === "object" && u?.email && u?.role) setUser(u);
-              else {
-                console.error("Login failed:", u);
-                setUser(null);
-              }
+              else setUser(null);
             }}
             users={getUsers()}
           />
