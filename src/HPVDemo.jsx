@@ -1,9 +1,10 @@
+// File: src/HPVDemo.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import { META, FACILITIES } from "./data/meta";
 import LoginEmail from "./components/LoginEmail";
 import Dashboard from "./components/Dashboard";
 import UserForm from "./components/common/UserForm";
-import MyRecordsSmart from "./components/common/MyRecordsSmart"; // ⬅️ new import
+import MyRecordsSmart from "./components/common/MyRecordsSmart";
 import exportToExcel from "./utils/exportToExcel";
 import { submitDailyEntry, getEntries } from "./lib/storage";
 import LoginPage from "./components/LoginPage";
@@ -253,16 +254,22 @@ function runSelfTests() {
 runSelfTests();
 
 export default function HPVDemo() {
-  const [user, setUser] = useState(null); // {email, role, facility}
+  const [user, setUser] = useState(null);
   const [responses, setRows] = useState(getResponses());
   const [schoolInfo, setSchoolInfoState] = useState(getSchoolInfo());
 
   function signOut() {
     setUser(null);
   }
+
+  // ⬇️ FIXED: include created_at & updated_at EXACT as DB, and a ts for latest-wins
   function mapEntryToLocal(e) {
+    const created = e.created_at || null;
+    const updated = e.updated_at || null;
+    const entryDate = (e.entry_date || created || "").slice(0, 10);
+
     return {
-      date: (e.entry_date || e.created_at || "").slice(0, 10),
+      date: entryDate,
       email: e.created_by || "",
       facility: e.facility || "",
       center: e.clinic_name || "",
@@ -271,8 +278,16 @@ export default function HPVDemo() {
       refused: e.refused ?? 0,
       absent: e.absent ?? 0,
       unvaccinated: e.not_accounted ?? 0,
-    
-    ts: updatedISO ? new Date(updatedISO).getTime() : 0,};
+
+      // keep what DB sends (no formatting)
+      created_at: created,
+      updated_at: updated,
+
+      // for de-duplication/sorting latest edit
+      ts:
+        (updated ? Date.parse(updated) : created ? Date.parse(created) : 0) ||
+        0,
+    };
   }
 
   useEffect(() => {
@@ -309,7 +324,16 @@ export default function HPVDemo() {
     const inserted = await submitDailyEntry(payload);
     const localRow = {
       ...previewRow,
-      date: previewRow.date || (inserted?.created_at || "").slice(0, 10),
+      date:
+        previewRow.date ||
+        (inserted?.entry_date || inserted?.created_at || "").slice(0, 10),
+      created_at: inserted?.created_at || null,
+      updated_at: inserted?.updated_at || null,
+      ts: inserted?.updated_at
+        ? Date.parse(inserted.updated_at)
+        : inserted?.created_at
+        ? Date.parse(inserted.created_at)
+        : 0,
     };
     const next = [...responses, localRow];
     setRows(next);
@@ -323,6 +347,28 @@ export default function HPVDemo() {
   function onUpdateSchoolInfo(map) {
     setSchoolInfoState(map);
     setSchoolInfo(map);
+  }
+
+  // ⬇️ NEW: when a row is edited in the table, merge it locally
+  function handleRowEdited(patch) {
+    setRows((prev) =>
+      prev.map((r) =>
+        r.date === patch.date &&
+        r.center === patch.center &&
+        r.school === patch.school
+          ? { ...r, ...patch }
+          : r
+      )
+    );
+    setResponses((prev) =>
+      prev.map((r) =>
+        r.date === patch.date &&
+        r.center === patch.center &&
+        r.school === patch.school
+          ? { ...r, ...patch }
+          : r
+      )
+    );
   }
 
   return (
@@ -387,9 +433,11 @@ export default function HPVDemo() {
                 schoolInfo={schoolInfo}
               />
             </Card>
-
-            {/* moved to its own file with local styles */}
-            <MyRecordsSmart email={user.email} rows={responses} />
+            <MyRecordsSmart
+              email={user.email}
+              rows={responses}
+              onRowEdited={handleRowEdited} // ⬅️ pass back edits
+            />
           </div>
         )}
 

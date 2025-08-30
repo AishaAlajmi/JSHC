@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from "react";
 
-/** ─────────────────────────  Local, Arabic-friendly styles  ───────────────────────── */
+/** Local styles (kept as-is) */
 const LocalStyles = () => (
   <style>{`
     .hpv-screen {
@@ -41,7 +41,6 @@ const LocalStyles = () => (
     .hpv-topline{display:flex;flex-wrap:wrap;gap:.6rem 1rem;align-items:center;margin:.4rem .25rem .9rem}
     .hpv-topline .count{font-size:.85rem;color:var(--ink-3)}
 
-    /* Modal */
     .hpv-modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;z-index:50}
     .hpv-modal{background:#fff;border-radius:1rem;box-shadow:0 20px 50px rgba(2,6,23,.25);width:95%;max-width:700px;overflow:hidden}
     .hpv-modal .bar{height:6px;background:linear-gradient(90deg,var(--brand),var(--brand-dark))}
@@ -52,7 +51,6 @@ const LocalStyles = () => (
   `}</style>
 );
 
-/** Small field wrapper */
 function Field({ label, children }) {
   return (
     <div className="flex flex-col">
@@ -62,17 +60,12 @@ function Field({ label, children }) {
   );
 }
 
-/* Helpers */
 const toInt = (v) =>
   Number.isFinite(Number(v)) && Number(v) >= 0 ? Number(v) : 0;
-const fmtDT = (s) => {
-  if (!s) return "—";
-  const d = new Date(s);
-  if (isNaN(d)) return s;
-  return d.toLocaleString("ar-SA", { hour12: false });
-};
 
-/** ─────────────────────────────────  Component  ───────────────────────────────── */
+// show exactly what DB sends (or "-")
+const rawOrDash = (v) => (v ? String(v) : "—");
+
 export default function MyRecordsSmart({ email, rows, onExport, onRowEdited }) {
   const [filters, setFilters] = useState({
     from: "",
@@ -84,11 +77,11 @@ export default function MyRecordsSmart({ email, rows, onExport, onRowEdited }) {
 
   // Edit modal state
   const [editOpen, setEditOpen] = useState(false);
-  const [editRow, setEditRow] = useState(null); // the original row object
-  const [ev, setEv] = useState({ vaccinated: "", refused: "", absent: "" }); // editable values
+  const [editRow, setEditRow] = useState(null);
+  const [ev, setEv] = useState({ vaccinated: "", refused: "", absent: "" });
   const unvaccinatedLive = toInt(ev.refused) + toInt(ev.absent);
 
-  /** 1) Filter (case-insensitive search) */
+  // 1) Filter
   const filtered = useMemo(() => {
     const q = filters.q.trim().toLowerCase();
     return rows.filter((r) => {
@@ -107,7 +100,7 @@ export default function MyRecordsSmart({ email, rows, onExport, onRowEdited }) {
     });
   }, [rows, email, filters.from, filters.to, filters.q]);
 
-  /** 2) De-dupe by (date|center|school); latest wins if ts exists */
+  // 2) De-dupe by (date|center|school); latest wins using ts
   const uniqueByPair = useMemo(() => {
     const map = new Map();
     for (const r of filtered) {
@@ -118,7 +111,7 @@ export default function MyRecordsSmart({ email, rows, onExport, onRowEdited }) {
     return Array.from(map.values());
   }, [filtered]);
 
-  /** 3) Sort */
+  // 3) Sort
   const sorted = useMemo(() => {
     const arr = [...uniqueByPair];
     const dir = filters.dir === "asc" ? 1 : -1;
@@ -130,7 +123,7 @@ export default function MyRecordsSmart({ email, rows, onExport, onRowEdited }) {
     return arr;
   }, [uniqueByPair, filters.sortBy, filters.dir]);
 
-  /** 4) Totals */
+  // 4) Totals
   const totals = useMemo(
     () =>
       sorted.reduce(
@@ -150,7 +143,6 @@ export default function MyRecordsSmart({ email, rows, onExport, onRowEdited }) {
     setFilters({ from: "", to: "", q: "", sortBy: "date", dir: "desc" });
   }
 
-  /** Open editor for a row */
   function openEdit(r) {
     setEditRow(r);
     setEv({
@@ -161,25 +153,22 @@ export default function MyRecordsSmart({ email, rows, onExport, onRowEdited }) {
     setEditOpen(true);
   }
 
-  /** Save edit (upsert via the same API) */
+  // Save edit via API (server does UPSERT); then push patch up
   async function saveEdit() {
     if (!editRow) return;
     const payload = {
-      // required identity fields (server upsert on daily key)
       facility: editRow.facility,
       clinic_name: editRow.center,
       school_name: editRow.school,
-      // keep fixed info if you have them on rows (else will be null)
       gender: editRow.sex || null,
       authority: editRow.authority || null,
       stage: editRow.stage || null,
-      // edited numbers
       vaccinated: toInt(ev.vaccinated),
       refused: toInt(ev.refused),
       absent: toInt(ev.absent),
       not_accounted: unvaccinatedLive,
       school_total: Number(editRow.schoolTotal) || 0,
-      created_by: email || editRow.email || null,
+      created_by: editRow.email || null,
     };
 
     try {
@@ -188,30 +177,22 @@ export default function MyRecordsSmart({ email, rows, onExport, onRowEdited }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.error || "Failed to save entry");
-      }
-      const updated = await res.json(); // should include updated_at/created_at
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || "Failed to save entry");
+
       setEditOpen(false);
 
-      // Notify parent to merge the change into state, or reload as a fallback
-      if (typeof onRowEdited === "function") {
-        onRowEdited({
-          ...editRow,
-          vaccinated: payload.vaccinated,
-          refused: payload.refused,
-          absent: payload.absent,
-          unvaccinated: payload.not_accounted,
-          updated_at:
-            updated?.updated_at ||
-            updated?.created_at ||
-            new Date().toISOString(),
-        });
-      } else {
-        // last resort so the table reflects the change
-        window.location.reload();
-      }
+      // tell parent the exact updated_at string from DB
+      onRowEdited?.({
+        ...editRow,
+        vaccinated: payload.vaccinated,
+        refused: payload.refused,
+        absent: payload.absent,
+        unvaccinated: payload.not_accounted,
+        updated_at: data?.updated_at || null,
+        created_at: data?.created_at || editRow.created_at || null,
+        ts: data?.updated_at ? Date.parse(data.updated_at) : editRow.ts || 0,
+      });
     } catch (e) {
       alert(e.message || "تعذّر حفظ التعديل");
     }
@@ -228,7 +209,7 @@ export default function MyRecordsSmart({ email, rows, onExport, onRowEdited }) {
         </div>
 
         <div className="body">
-          {/* Topline */}
+          {/* topline */}
           <div className="hpv-topline">
             <span className="hpv-chip ok">مطعّم: {totals.v}</span>
             <span className="hpv-chip">رفض: {totals.r}</span>
@@ -240,15 +221,14 @@ export default function MyRecordsSmart({ email, rows, onExport, onRowEdited }) {
                 type="button"
                 className="hpv-btn hpv-btn-ghost"
                 onClick={() => onExport(sorted)}
-                title="تصدير السجلات المفلترة"
               >
                 تصدير
               </button>
             )}
           </div>
 
-          {/* Filters */}
-          <div className="grid gap-3 md:grid-cols-5 items-end mb-3 hpv-grid">
+          {/* filters */}
+          <div className="grid gap-3 md:grid-cols-6 items-end mb-3 hpv-grid">
             <Field label="من">
               <input
                 type="date"
@@ -304,22 +284,25 @@ export default function MyRecordsSmart({ email, rows, onExport, onRowEdited }) {
                 <option value="asc">الأقل</option>
               </select>
             </Field>
+            <div>
+              <button
+                type="button"
+                className="hpv-btn hpv-btn-primary"
+                style={{ marginInlineEnd: ".5rem" }}
+              >
+                تطبيق
+              </button>
+              <button
+                type="button"
+                className="hpv-btn hpv-btn-ghost"
+                onClick={clearFilters}
+              >
+                مسح الفلاتر
+              </button>
+            </div>
           </div>
 
-          <div className="flex gap-2 mb-4">
-            <button type="button" className="hpv-btn hpv-btn-primary">
-              تطبيق
-            </button>
-            <button
-              type="button"
-              className="hpv-btn hpv-btn-ghost"
-              onClick={clearFilters}
-            >
-              مسح الفلاتر
-            </button>
-          </div>
-
-          {/* Table */}
+          {/* table */}
           <div className="hpv-table-wrap">
             <table className="hpv-table text-sm">
               <thead>
@@ -331,7 +314,8 @@ export default function MyRecordsSmart({ email, rows, onExport, onRowEdited }) {
                   <th>رفض</th>
                   <th>غياب</th>
                   <th>غير مطعّم</th>
-                  <th>آخر تعديل</th>
+                  <th>أُنشئ في</th> {/* created_at EXACT */}
+                  <th>آخر تعديل</th> {/* updated_at or "—" */}
                   <th>إجراء</th>
                 </tr>
               </thead>
@@ -345,7 +329,12 @@ export default function MyRecordsSmart({ email, rows, onExport, onRowEdited }) {
                     <td>{r.refused}</td>
                     <td>{r.absent}</td>
                     <td>{r.unvaccinated}</td>
-                    <td className="whitespace-nowrap">{r.updated_at}</td>
+                    <td className="whitespace-nowrap">
+                      {rawOrDash(r.created_at)}
+                    </td>
+                    <td className="whitespace-nowrap">
+                      {rawOrDash(r.updated_at)}
+                    </td>
                     <td>
                       <button
                         className="hpv-btn hpv-btn-ghost"
@@ -358,7 +347,7 @@ export default function MyRecordsSmart({ email, rows, onExport, onRowEdited }) {
                 ))}
                 {sorted.length === 0 && (
                   <tr>
-                    <td colSpan={9} className="text-center text-gray-500 py-8">
+                    <td colSpan={10} className="text-center text-gray-500 py-8">
                       لا توجد سجلات مطابقة للفلاتر الحالية.
                     </td>
                   </tr>
