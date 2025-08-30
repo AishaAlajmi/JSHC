@@ -1,11 +1,11 @@
 // File: src/HPVDemo.jsx
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { META, FACILITIES } from "./data/meta";
 import Dashboard from "./components/Dashboard";
 import UserForm from "./components/common/UserForm";
 import MyRecordsSmart from "./components/common/MyRecordsSmart";
 import exportToExcel from "./utils/exportToExcel";
-import { submitDailyEntry, getEntries } from "./lib/storage";
+import { submitDailyEntry, getEntries, UPSERT_MODES } from "./lib/storage";
 import LoginPage from "./components/LoginPage";
 
 const DEBUG = true;
@@ -84,7 +84,7 @@ function setSchoolInfo(map) {
   safeSetItem(LS_SCHOOL_INFO, map, {});
 }
 
-// ---------- Seed demo once (for first-time preview only) ----------
+// ---------- Seed demo once ----------
 if (!localStorage.getItem(LS_RESPONSES)) {
   const t = new Date().toISOString().slice(0, 10);
   setResponses([
@@ -231,27 +231,6 @@ function AdminManageUsers() {
   );
 }
 
-// ---------- Self-tests ----------
-function runSelfTests() {
-  try {
-    Object.entries(META.centersByFacility).forEach(([f, centers]) => {
-      if (!centers || !centers.length)
-        console.warn("لا توجد مراكز للمنشأة:", f);
-    });
-    Object.entries(META.centersByFacility).forEach(([f, centers]) => {
-      centers.forEach((c) => {
-        const k = `${f}::${c}`;
-        if (!Array.isArray(META.schoolsByCenter[k]))
-          console.warn("المركز بلا مدارس:", k);
-      });
-    });
-    console.log("✅ self-tests passed");
-  } catch (e) {
-    console.error("self-tests error", e);
-  }
-}
-runSelfTests();
-
 // =====================================================
 // Root App
 // =====================================================
@@ -260,7 +239,7 @@ export default function HPVDemo() {
   const [responses, setRows] = useState(getResponses());
   const [schoolInfo, setSchoolInfoState] = useState(getSchoolInfo());
 
-  // One-time cleaner for bad LS values that could crash JSON.parse
+  // Clean bad LS values that could crash JSON.parse
   useEffect(() => {
     [LS_USERS, LS_RESPONSES, LS_SCHOOL_INFO].forEach((k) => {
       const v = localStorage.getItem(k);
@@ -283,7 +262,7 @@ export default function HPVDemo() {
       refused: e.refused ?? 0,
       absent: e.absent ?? 0,
       unvaccinated: e.not_accounted ?? 0,
-      ts: e.ts || 0, // optional
+      ts: e.ts || 0,
     };
   }
 
@@ -304,7 +283,25 @@ export default function HPVDemo() {
     })();
   }, [user?.email, user?.role]);
 
-  // Save to Supabase, then update local list
+  // --- local upsert helper to avoid duplicates in UI ---
+  function upsertLocal(list, row, currentUserEmail) {
+    const key = (r) => `${r.email}||${r.center}||${r.school}`;
+    const targetKey = key({
+      email: currentUserEmail,
+      center: row.center,
+      school: row.school,
+    });
+    const idx = list.findIndex((r) => key(r) === targetKey);
+    const normalized = { ...row, email: currentUserEmail };
+    if (idx >= 0) {
+      const copy = [...list];
+      copy[idx] = normalized; // replace existing
+      return copy;
+    }
+    return [...list, normalized]; // add new
+  }
+
+  // Save to Supabase (upsert by pair), then update local list
   async function addRow(previewRow) {
     const payload = {
       facility: previewRow.facility,
@@ -320,15 +317,28 @@ export default function HPVDemo() {
       school_total: previewRow.schoolTotal,
       created_by: previewRow.email || (user?.email ?? ""),
     };
-    const inserted = await submitDailyEntry(payload);
+
+    // server upsert by (created_by, clinic_name, school_name)
+    const saved = await submitDailyEntry(payload, {
+      mode: UPSERT_MODES.PER_PAIR,
+    });
+
+    // normalize date into UI row
     const localRow = {
       ...previewRow,
-      date: previewRow.date || (inserted?.created_at || "").slice(0, 10),
+      date:
+        previewRow.date ||
+        (saved?.entry_date || saved?.created_at || "").slice(0, 10),
     };
-    const next = [...responses, localRow];
+
+    const next = upsertLocal(
+      responses,
+      localRow,
+      user?.email || previewRow.email
+    );
     setRows(next);
     setResponses(next);
-    return inserted;
+    return saved;
   }
 
   function onExport(rows) {

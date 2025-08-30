@@ -1,12 +1,10 @@
 // File: src/components/common/UserForm.jsx
 import React, { useEffect, useState, useMemo } from "react";
-import { submitDailyEntry } from "../../lib/storage";
-import { getSchoolStatic } from "../../data/meta"; // <- fetch fixed info
+import { submitDailyEntry, UPSERT_MODES } from "../../lib/storage";
+import { getSchoolStatic } from "../../data/meta"; // fixed info
 
 const DEBUG = true;
-const log = (...args) => {
-  if (DEBUG) console.log("[UserForm]", ...args);
-};
+const log = (...args) => DEBUG && console.log("[UserForm]", ...args);
 
 function todayStr() {
   return new Date().toISOString().slice(0, 10);
@@ -229,7 +227,8 @@ export default function UserForm({
     };
 
     log("submitDailyEntry payload ->", input);
-    const res = await submitDailyEntry(input);
+    // ⬅️ Upsert by (created_by, clinic_name, school_name)
+    const res = await submitDailyEntry(input, { mode: UPSERT_MODES.PER_PAIR });
 
     if (res && typeof res === "object" && ("error" in res || "data" in res)) {
       if (res.error) {
@@ -311,9 +310,7 @@ export default function UserForm({
           <div className="flex flex-col">
             <label className="hpv-label">المنشأة الصحية</label>
             <input value={facility} disabled className="hpv-input bg-gray-100" />
-            <span className="hpv-help mt-1">
-              يتم تحديدها تلقائيًا حسب صلاحياتك.
-            </span>
+            <span className="hpv-help mt-1">يتم تحديدها تلقائيًا حسب صلاحياتك.</span>
           </div>
           <div className="flex flex-col">
             <label className="hpv-label">اسم المركز الصحي</label>
@@ -323,9 +320,7 @@ export default function UserForm({
               className="hpv-select"
             >
               {centers.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
+                <option key={c} value={c}>{c}</option>
               ))}
             </select>
           </div>
@@ -340,9 +335,7 @@ export default function UserForm({
                 <option value="">— لا توجد مدارس لهذا المركز —</option>
               )}
               {schools.map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
+                <option key={s} value={s}>{s}</option>
               ))}
             </select>
           </div>
@@ -354,35 +347,19 @@ export default function UserForm({
         <div className="grid md:grid-cols-4 gap-3 text-sm">
           <div className="flex flex-col">
             <label className="hpv-label">الجنس</label>
-            <input
-              disabled
-              className="hpv-input bg-gray-100"
-              value={fixed.sex || "غير محدد"}
-            />
+            <input disabled className="hpv-input bg-gray-100" value={fixed.sex || "غير محدد"} />
           </div>
           <div className="flex flex-col">
             <label className="hpv-label">السلطة</label>
-            <input
-              disabled
-              className="hpv-input bg-gray-100"
-              value={fixed.authority || "غير محدد"}
-            />
+            <input disabled className="hpv-input bg-gray-100" value={fixed.authority || "غير محدد"} />
           </div>
           <div className="flex flex-col">
             <label className="hpv-label">المرحلة</label>
-            <input
-              disabled
-              className="hpv-input bg-gray-100"
-              value={fixed.stage || "غير محدد"}
-            />
+            <input disabled className="hpv-input bg-gray-100" value={fixed.stage || "غير محدد"} />
           </div>
           <div className="flex flex-col">
             <label className="hpv-label">إجمالي المدرسة</label>
-            <input
-              disabled
-              className="hpv-input bg-gray-100"
-              value={fixed.schoolTotal || 0}
-            />
+            <input disabled className="hpv-input bg-gray-100" value={fixed.schoolTotal || 0} />
           </div>
         </div>
       </Card>
@@ -475,42 +452,18 @@ export default function UserForm({
       >
         {preview && (
           <div className="grid md:grid-cols-3 gap-3 text-sm">
-            <div>
-              <b>التاريخ:</b> {preview.date}
-            </div>
-            <div>
-              <b>المنشأة:</b> {preview.facility}
-            </div>
-            <div>
-              <b>المركز:</b> {preview.center}
-            </div>
-            <div>
-              <b>المدرسة:</b> {preview.school}
-            </div>
-            <div>
-              <b>مطعّم:</b> {preview.vaccinated}
-            </div>
-            <div>
-              <b>رفض:</b> {preview.refused}
-            </div>
-            <div>
-              <b>غياب:</b> {preview.absent}
-            </div>
-            <div>
-              <b>غير مطعّم:</b> {preview.unvaccinated}
-            </div>
-            <div>
-              <b>الجنس:</b> {preview.sex || "—"}
-            </div>
-            <div>
-              <b>السلطة:</b> {preview.authority || "—"}
-            </div>
-            <div>
-              <b>المرحلة:</b> {preview.stage || "—"}
-            </div>
-            <div>
-              <b>العدد الإجمالي للمدرسة:</b> {preview.schoolTotal || 0}
-            </div>
+            <div><b>التاريخ:</b> {preview.date}</div>
+            <div><b>المنشأة:</b> {preview.facility}</div>
+            <div><b>المركز:</b> {preview.center}</div>
+            <div><b>المدرسة:</b> {preview.school}</div>
+            <div><b>مطعّم:</b> {preview.vaccinated}</div>
+            <div><b>رفض:</b> {preview.refused}</div>
+            <div><b>غياب:</b> {preview.absent}</div>
+            <div><b>غير مطعّم:</b> {preview.unvaccinated}</div>
+            <div><b>الجنس:</b> {preview.sex || "—"}</div>
+            <div><b>السلطة:</b> {preview.authority || "—"}</div>
+            <div><b>المرحلة:</b> {preview.stage || "—"}</div>
+            <div><b>العدد الإجمالي للمدرسة:</b> {preview.schoolTotal || 0}</div>
           </div>
         )}
       </Modal>
