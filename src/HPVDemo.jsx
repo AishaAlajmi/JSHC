@@ -1,6 +1,5 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { META, FACILITIES } from "./data/meta";
-import LoginEmail from "./components/LoginEmail";
 import Dashboard from "./components/Dashboard";
 import UserForm from "./components/common/UserForm";
 import MyRecordsSmart from "./components/common/MyRecordsSmart";
@@ -8,27 +7,24 @@ import exportToExcel from "./utils/exportToExcel";
 import { submitDailyEntry, getEntries } from "./lib/storage";
 import LoginPage from "./components/LoginPage";
 
-/* -------- prod-safe console + localStorage helpers -------- */
-const DEBUG = true;
-const log = (...args) => {
-  if (DEBUG && typeof window !== "undefined") console.log("[HPVDemo]", ...args);
-};
-
+/* =================== helpers (prod/SSR safe) =================== */
 const isBrowser = typeof window !== "undefined";
-const safeLSget = (k) => {
+const safeGet = (k) => {
   try {
     return isBrowser ? window.localStorage.getItem(k) : null;
   } catch {
     return null;
   }
 };
-const safeLSset = (k, v) => {
+const safeSet = (k, v) => {
   try {
     if (isBrowser) window.localStorage.setItem(k, v);
   } catch {}
 };
+const LS_USERS = "hpv_users_demo_v4";
+const LS_RESPONSES = "hpv_responses_demo_v4";
+const LS_SCHOOL_INFO = "hpv_school_info_v1";
 
-/* -------- theme / brand styles -------- */
 const BrandStyles = () => (
   <style>{`
     :root{--brand:#1691D0;--brand-dark:#15508A;--brand-alt:#3AC0C3}
@@ -40,37 +36,6 @@ const BrandStyles = () => (
   `}</style>
 );
 
-/* -------- LS keys -------- */
-const LS_USERS = "hpv_users_demo_v4";
-const LS_RESPONSES = "hpv_responses_demo_v4";
-const LS_SCHOOL_INFO = "hpv_school_info_v1";
-
-/* -------- LS helpers (SSR-safe) -------- */
-function getUsers() {
-  const raw = safeLSget(LS_USERS);
-  return raw ? JSON.parse(raw) : {};
-}
-function setUsers(obj) {
-  safeLSset(LS_USERS, JSON.stringify(obj));
-}
-
-function getResponses() {
-  const raw = safeLSget(LS_RESPONSES);
-  return raw ? JSON.parse(raw) : [];
-}
-function setResponsesLS(rows) {
-  safeLSset(LS_RESPONSES, JSON.stringify(rows));
-}
-
-function getSchoolInfo() {
-  const raw = safeLSget(LS_SCHOOL_INFO);
-  return raw ? JSON.parse(raw) : {};
-}
-function setSchoolInfoLS(map) {
-  safeLSset(LS_SCHOOL_INFO, JSON.stringify(map));
-}
-
-/* -------- small card -------- */
 function Card({ title, children, actions }) {
   return (
     <div className="p-4 rounded-2xl shadow bg-white">
@@ -83,18 +48,57 @@ function Card({ title, children, actions }) {
   );
 }
 
-/* -------- Admin users -------- */
-function AdminManageUsers() {
-  const [users, setUsersState] = useState(() => getUsers());
-  const [email, setEmail] = useState("");
-  const [role, setRole] = useState("user");
-  const [facility, setFacility] = useState(FACILITIES[0] || "");
+/* ---------- ErrorBoundary to avoid blank screen ---------- */
+class ErrorBoundary extends React.Component {
+  constructor(p) {
+    super(p);
+    this.state = { hasError: false, error: null };
+  }
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+  componentDidCatch(e, i) {
+    console.error("App error:", e, i);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div dir="rtl" style={{ padding: 20, color: "#b91c1c" }}>
+          <h2>حدث خطأ غير متوقع</h2>
+          <pre
+            style={{
+              whiteSpace: "pre-wrap",
+              background: "#fee2e2",
+              padding: 12,
+              borderRadius: 8,
+            }}
+          >
+            {String(this.state.error)}
+          </pre>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
-  // seed users if empty (client only)
+export default function HPVDemo() {
+  const [user, setUser] = useState(null);
+  const [responses, setResponses] = useState(() => {
+    const raw = safeGet(LS_RESPONSES);
+    return raw ? JSON.parse(raw) : [];
+  });
+  const [schoolInfo, setSchoolInfo] = useState(() => {
+    const raw = safeGet(LS_SCHOOL_INFO);
+    return raw ? JSON.parse(raw) : {};
+  });
+
+  // Seed demo data only in browser
   useEffect(() => {
     if (!isBrowser) return;
-    if (!safeLSget(LS_USERS)) {
-      const seeded = {
+
+    if (!safeGet(LS_USERS)) {
+      const seededUsers = {
         "aishahadi2013@gmail.com": { role: "user", facility: "رابغ" },
         "jamelah.hadi2019@gmail.com": {
           role: "user",
@@ -106,153 +110,10 @@ function AdminManageUsers() {
         },
         "alia@gmail.com": { role: "admin", facility: null },
       };
-      setUsers(seeded);
-      setUsersState(seeded);
+      safeSet(LS_USERS, JSON.stringify(seededUsers));
     }
-  }, []);
 
-  function addOrUpdate() {
-    const key = (email || "").trim().toLowerCase();
-    if (!key) return;
-    const next = {
-      ...users,
-      [key]: { role, facility: role === "admin" ? null : facility },
-    };
-    setUsers(next);
-    setUsersState(next);
-    setEmail("");
-  }
-  function removeKey(k) {
-    const next = { ...users };
-    delete next[k];
-    setUsers(next);
-    setUsersState(next);
-  }
-
-  return (
-    <Card
-      title="صلاحيات المستخدمين"
-      actions={
-        <button className="btn btn-primary" onClick={addOrUpdate}>
-          حفظ
-        </button>
-      }
-    >
-      <div className="grid md:grid-cols-4 gap-2">
-        <input
-          className="border rounded-xl px-3 py-2"
-          placeholder="أدخل بريدًا"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-        />
-        <select
-          className="border rounded-xl px-3 py-2"
-          value={role}
-          onChange={(e) => setRole(e.target.value)}
-        >
-          <option value="user">User</option>
-          <option value="admin">Admin</option>
-        </select>
-        <select
-          className="border rounded-xl px-3 py-2"
-          value={facility}
-          onChange={(e) => setFacility(e.target.value)}
-          disabled={role === "admin"}
-        >
-          {FACILITIES.map((f) => (
-            <option key={f} value={f}>
-              {f}
-            </option>
-          ))}
-        </select>
-      </div>
-      <div className="overflow-auto mt-3">
-        <table className="min-w-full text-sm">
-          <thead>
-            <tr className="text-right border-b">
-              <th className="p-2">البريد</th>
-              <th className="p-2">الدور</th>
-              <th className="p-2">المنشأة</th>
-              <th className="p-2">إدارة</th>
-            </tr>
-          </thead>
-          <tbody>
-            {Object.entries(users).map(([k, v]) => (
-              <tr key={k} className="border-b">
-                <td className="p-2">{k}</td>
-                <td className="p-2">{v.role}</td>
-                <td className="p-2">
-                  {v.role === "admin" ? "-" : v.facility || ""}
-                </td>
-                <td className="p-2">
-                  <button
-                    className="btn btn-ghost"
-                    onClick={() => removeKey(k)}
-                  >
-                    حذف
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </Card>
-  );
-}
-
-/* -------- sanity checks -------- */
-function runSelfTests() {
-  try {
-    Object.entries(META.centersByFacility).forEach(([f, centers]) => {
-      if (!centers || !centers.length)
-        console.warn("لا توجد مراكز للمنشأة:", f);
-    });
-    Object.entries(META.centersByFacility).forEach(([f, centers]) => {
-      centers.forEach((c) => {
-        const k = `${f}::${c}`;
-        if (!Array.isArray(META.schoolsByCenter[k]))
-          console.warn("المركز بلا مدارس:", k);
-      });
-    });
-    const sumCheck = { refused: 2, absent: 3 };
-    if (sumCheck.refused + sumCheck.absent !== 5)
-      throw new Error("unvaccinated calc test failed");
-    [
-      "aishahadi2013@gmail.com",
-      "jamelah.hadi2019@gmail.com",
-      "hajer@gmail.com",
-      "alia@gmail.com",
-    ].forEach((em) => {
-      if (!getUsers()[em])
-        console.warn("مستخدم مفقود (قد يكون طبيعياً قبل البذر):", em);
-    });
-    console.log("✅ self-tests passed");
-  } catch (e) {
-    console.error("self-tests error", e);
-  }
-}
-if (isBrowser) runSelfTests();
-
-/* -------- main app -------- */
-export default function HPVDemo() {
-  // lazy init so SSR doesn't touch localStorage
-  const [user, setUser] = useState(null);
-  const [responses, setRows] = useState(() =>
-    isBrowser ? getResponses() : []
-  );
-  const [schoolInfo, setSchoolInfoState] = useState(() =>
-    isBrowser ? getSchoolInfo() : {}
-  );
-
-  function signOut() {
-    setUser(null);
-  }
-
-  // Seed demo responses on first load (browser only)
-  useEffect(() => {
-    if (!isBrowser) return;
-    if (!safeLSget(LS_RESPONSES)) {
+    if (!safeGet(LS_RESPONSES)) {
       const t = new Date().toISOString().slice(0, 10);
       const demo = [
         {
@@ -265,39 +126,16 @@ export default function HPVDemo() {
           refused: 1,
           absent: 2,
           unvaccinated: 3,
-          sex: "بنات",
-          authority: "حكومي",
-          stage: "متوسط",
-          schoolTotal: 300,
-          created_at: `${t}T08:00:00`,
+          created_at: `${t}T08:00:00Z`,
           updated_at: null,
-          ts: Date.parse(`${t}T08:00:00`),
-        },
-        {
-          date: t,
-          email: "jamelah.hadi2019@gmail.com",
-          facility: "مجمع الملك عبد الله",
-          center: "مركز صحي بريمان",
-          school: "المتوسطة الثانية بعد المئة",
-          vaccinated: 18,
-          refused: 2,
-          absent: 2,
-          unvaccinated: 4,
-          sex: "بنات",
-          authority: "حكومي",
-          stage: "متوسط",
-          schoolTotal: 420,
-          created_at: `${t}T09:30:00`,
-          updated_at: null,
-          ts: Date.parse(`${t}T09:30:00`),
+          ts: Date.parse(`${t}T08:00:00Z`),
         },
       ];
-      setResponsesLS(demo);
-      setRows(demo);
+      safeSet(LS_RESPONSES, JSON.stringify(demo));
+      setResponses(demo);
     }
   }, []);
 
-  // map entries returned from API to local shape
   function mapEntryToLocal(e) {
     const created = e.created_at || null;
     const updated = e.updated_at || null;
@@ -320,17 +158,16 @@ export default function HPVDemo() {
     };
   }
 
-  // load from Supabase when user logs in
   useEffect(() => {
     if (!user) return;
     (async () => {
       try {
         const params = user.role === "user" ? { created_by: user.email } : {};
-        const { rows } = await getEntries(params);
-        const mapped = (rows || []).map(mapEntryToLocal);
-        setRows(mapped);
-        setResponsesLS(mapped);
-        log("Loaded entries from Supabase:", mapped.length);
+        const res = await getEntries(params);
+        const rows = Array.isArray(res?.rows) ? res.rows : [];
+        const mapped = rows.map(mapEntryToLocal);
+        setResponses(mapped);
+        safeSet(LS_RESPONSES, JSON.stringify(mapped));
       } catch (e) {
         console.error("Failed to load entries:", e);
       }
@@ -352,9 +189,10 @@ export default function HPVDemo() {
       school_total: previewRow.schoolTotal,
       created_by: previewRow.email || (user?.email ?? ""),
     };
-    const inserted = await submitDailyEntry(payload);
+    const inserted = await submitDailyEntry(payload); // this is your lib; may return undefined if API is 204
     const localRow = {
       ...previewRow,
+      email: user?.email || previewRow.email || "",
       date:
         previewRow.date ||
         (inserted?.entry_date || inserted?.created_at || "").slice(0, 10),
@@ -365,134 +203,123 @@ export default function HPVDemo() {
         : inserted?.created_at
         ? Date.parse(inserted.created_at)
         : 0,
-      email: user?.email || previewRow.email,
     };
-    const next = [...responses, localRow];
-    setRows(next);
-    setResponsesLS(next);
+    const next = [...(responses || []), localRow];
+    setResponses(next);
+    safeSet(LS_RESPONSES, JSON.stringify(next));
     return inserted;
   }
 
   function onExport(rows) {
-    exportToExcel(rows);
+    exportToExcel(rows || []);
   }
   function onUpdateSchoolInfo(map) {
-    setSchoolInfoState(map);
-    setSchoolInfoLS(map);
+    setSchoolInfo(map || {});
+    safeSet(LS_SCHOOL_INFO, JSON.stringify(map || {}));
+  }
+  function handleRowEdited(patch) {
+    setResponses((prev) =>
+      (prev || []).map((r) =>
+        r.date === patch.date &&
+        r.center === patch.center &&
+        r.school === patch.school
+          ? { ...r, ...patch }
+          : r
+      )
+    );
+  }
+  function signOut() {
+    setUser(null);
   }
 
-  // merge edits coming from the table
-  function handleRowEdited(patch) {
-    setRows((prev) =>
-      prev.map((r) =>
-        r.date === patch.date &&
-        r.center === patch.center &&
-        r.school === patch.school
-          ? { ...r, ...patch }
-          : r
-      )
-    );
-    setResponsesLS(
-      (responses || []).map((r) =>
-        r.date === patch.date &&
-        r.center === patch.center &&
-        r.school === patch.school
-          ? { ...r, ...patch }
-          : r
-      )
-    );
-  }
+  const usersForLogin = (() => {
+    const raw = safeGet(LS_USERS);
+    return raw ? JSON.parse(raw) : {};
+    // (no SSR access)
+  })();
 
   return (
-    <div dir="rtl" className="min-h-screen bg-gray-100">
-      <BrandStyles />
-
-      <header className="sticky top-0 z-10 text-white brand-gradient">
-        <div className="max-w-6xl mx-auto px-4 py-3 flex items-center gap-3">
-          <div className="font-bold">نظام حملة الورم الحليمي</div>
-          <div className="ml-auto flex items-center gap-3">
-            {user ? (
-              <>
-                <div className="text-sm text-right">
-                  <div className="font-semibold">{user.email}</div>
-                  <div className="text-gray-200">
-                    {user.role === "admin" ? "مشرف" : user.facility}
+    <ErrorBoundary>
+      <div dir="rtl" className="min-h-screen bg-gray-100">
+        <BrandStyles />
+        <header className="sticky top-0 z-10 text-white brand-gradient">
+          <div className="max-w-6xl mx-auto px-4 py-3 flex items-center gap-3">
+            <div className="font-bold">نظام حملة الورم الحليمي</div>
+            <div className="ml-auto flex items-center gap-3">
+              {user ? (
+                <>
+                  <div className="text-sm text-right">
+                    <div className="font-semibold">{user.email}</div>
+                    <div className="text-gray-200">
+                      {user.role === "admin" ? "مشرف" : user.facility}
+                    </div>
                   </div>
-                </div>
-                <button
-                  onClick={signOut}
-                  className="px-3 py-1 border rounded-xl bg-white/10 text-white"
-                >
-                  تسجيل خروج
-                </button>
-              </>
-            ) : null}
+                  <button
+                    onClick={signOut}
+                    className="px-3 py-1 border rounded-xl bg白/10 text-white"
+                  >
+                    تسجيل خروج
+                  </button>
+                </>
+              ) : null}
+            </div>
           </div>
-        </div>
-      </header>
+        </header>
 
-      <main className="max-w-6xl mx-auto p-4">
-        {!user && (
-          <LoginPage
-            onLogin={(u) => {
-              const email = (
-                typeof u === "string" ? u : u?.email || ""
-              ).toLowerCase();
-              const info = getUsers()[email];
-              if (info)
-                setUser({ email, role: info.role, facility: info.facility });
-              else if (typeof u === "object" && u?.email && u?.role) setUser(u);
-              else {
-                console.error(
-                  "Login failed: user not found or invalid shape",
-                  u
-                );
-                setUser(null);
-              }
-            }}
-            users={getUsers()}
-          />
-        )}
-
-        {user && user.role === "user" && (
-          <div className="grid gap-4">
-            <Card>
-              <UserForm
-                email={user.email}
-                facility={user.facility}
-                meta={META}
-                onSubmit={addRow}
-                schoolInfo={schoolInfo}
-              />
-            </Card>
-            <MyRecordsSmart
-              email={user.email}
-              rows={responses}
-              onRowEdited={handleRowEdited}
+        <main className="max-w-6xl mx-auto p-4">
+          {!user && (
+            <LoginPage
+              onLogin={(u) => {
+                const email = (
+                  typeof u === "string" ? u : u?.email || ""
+                ).toLowerCase();
+                const info = usersForLogin[email];
+                if (info)
+                  setUser({ email, role: info.role, facility: info.facility });
+                else if (typeof u === "object" && u?.email && u?.role)
+                  setUser(u);
+                else setUser(null);
+              }}
+              users={usersForLogin}
             />
-          </div>
-        )}
+          )}
 
-        {user && user.role === "admin" && (
-          <>
+          {user && user.role === "user" && (
+            <div className="grid gap-4">
+              <Card>
+                <UserForm
+                  email={user.email}
+                  facility={user.facility}
+                  meta={META}
+                  onSubmit={addRow}
+                  schoolInfo={schoolInfo}
+                />
+              </Card>
+              <MyRecordsSmart
+                email={user.email}
+                rows={responses || []}
+                onRowEdited={handleRowEdited}
+              />
+            </div>
+          )}
+
+          {user && user.role === "admin" && (
             <Card title="لوحة المعلومات (قراءة فقط)">
               <Dashboard
-                responses={responses}
+                responses={responses || []}
                 onExport={onExport}
                 schoolInfo={schoolInfo}
                 onUpdateSchoolInfo={onUpdateSchoolInfo}
               />
             </Card>
-            <div className="h-4" />
-            <AdminManageUsers />
-          </>
-        )}
-      </main>
+          )}
+        </main>
 
-      <footer className="max-w-6xl mx-auto p-4 text-center text-x text-gray-500">
-        حقوق النشر محفوظة لدى{" "}
-        <span className="font-bold">تجمع جدة الصحي الثاني</span>
-      </footer>
-    </div>
+        <footer className="max-w-6xl mx-auto p-4 text-center text-x text-gray-500">
+          حقوق النشر محفوظة لدى{" "}
+          <span className="font-bold">تجمع جدة الصحي الثاني</span>
+        </footer>
+      </div>
+    </ErrorBoundary>
   );
 }
