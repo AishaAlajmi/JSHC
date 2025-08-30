@@ -63,8 +63,12 @@ function Field({ label, children }) {
 const toInt = (v) =>
   Number.isFinite(Number(v)) && Number(v) >= 0 ? Number(v) : 0;
 
-// show exactly what DB sends (or "-")
-const rawOrDash = (v) => (v ? String(v) : "—");
+// Format "YYYY-MM-DD HH:MM" directly from DB ISO string
+const fmtYMDHM = (s) => {
+  if (!s) return "—";
+  const m = String(s).match(/^(\d{4}-\d{2}-\d{2})T(\d{2}):(\d{2})/);
+  return m ? `${m[1]} ${m[2]}:${m[3]}` : "—";
+};
 
 export default function MyRecordsSmart({ email, rows, onExport, onRowEdited }) {
   const [filters, setFilters] = useState({
@@ -182,7 +186,6 @@ export default function MyRecordsSmart({ email, rows, onExport, onRowEdited }) {
 
       setEditOpen(false);
 
-      // tell parent the exact updated_at string from DB
       onRowEdited?.({
         ...editRow,
         vaccinated: payload.vaccinated,
@@ -314,40 +317,44 @@ export default function MyRecordsSmart({ email, rows, onExport, onRowEdited }) {
                   <th>رفض</th>
                   <th>غياب</th>
                   <th>غير مطعّم</th>
-                  <th>أُنشئ في</th> {/* created_at EXACT */}
-                  <th>آخر تعديل</th> {/* updated_at or "—" */}
+                  <th>آخر تعديل</th> {/* YYYY-MM-DD HH:MM or — */}
                   <th>إجراء</th>
                 </tr>
               </thead>
               <tbody>
-                {sorted.slice(-500).map((r) => (
-                  <tr key={`${r.date}|${r.center}|${r.school}`}>
-                    <td className="whitespace-nowrap">{r.date}</td>
-                    <td>{r.center}</td>
-                    <td>{r.school}</td>
-                    <td>{r.vaccinated}</td>
-                    <td>{r.refused}</td>
-                    <td>{r.absent}</td>
-                    <td>{r.unvaccinated}</td>
-                    <td className="whitespace-nowrap">
-                      {rawOrDash(r.created_at)}
-                    </td>
-                    <td className="whitespace-nowrap">
-                      {rawOrDash(r.updated_at)}
-                    </td>
-                    <td>
-                      <button
-                        className="hpv-btn hpv-btn-ghost"
-                        onClick={() => openEdit(r)}
-                      >
-                        تعديل
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                {sorted.slice(-500).map((r) => {
+                  const displayCreated = r.created_at
+                    ? fmtYMDHM(r.created_at)
+                    : r.date
+                    ? `${r.date} 00:00`
+                    : "—";
+                  const displayUpdated = r.updated_at
+                    ? fmtYMDHM(r.updated_at)
+                    : "—";
+                  return (
+                    <tr key={`${r.date}|${r.center}|${r.school}`}>
+                      <td className="whitespace-nowrap">{displayCreated}</td>
+                      <td>{r.center}</td>
+                      <td>{r.school}</td>
+                      <td>{r.vaccinated}</td>
+                      <td>{r.refused}</td>
+                      <td>{r.absent}</td>
+                      <td>{r.unvaccinated}</td>
+                      <td className="whitespace-nowrap">{displayUpdated}</td>
+                      <td>
+                        <button
+                          className="hpv-btn hpv-btn-ghost"
+                          onClick={() => openEdit(r)}
+                        >
+                          تعديل
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
                 {sorted.length === 0 && (
                   <tr>
-                    <td colSpan={10} className="text-center text-gray-500 py-8">
+                    <td colSpan={9} className="text-center text-gray-500 py-8">
                       لا توجد سجلات مطابقة للفلاتر الحالية.
                     </td>
                   </tr>

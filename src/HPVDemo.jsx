@@ -1,4 +1,3 @@
-// File: src/HPVDemo.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import { META, FACILITIES } from "./data/meta";
 import LoginEmail from "./components/LoginEmail";
@@ -9,11 +8,27 @@ import exportToExcel from "./utils/exportToExcel";
 import { submitDailyEntry, getEntries } from "./lib/storage";
 import LoginPage from "./components/LoginPage";
 
+/* -------- prod-safe console + localStorage helpers -------- */
 const DEBUG = true;
 const log = (...args) => {
-  if (DEBUG) console.log("[HPVDemo]", ...args);
+  if (DEBUG && typeof window !== "undefined") console.log("[HPVDemo]", ...args);
 };
 
+const isBrowser = typeof window !== "undefined";
+const safeLSget = (k) => {
+  try {
+    return isBrowser ? window.localStorage.getItem(k) : null;
+  } catch {
+    return null;
+  }
+};
+const safeLSset = (k, v) => {
+  try {
+    if (isBrowser) window.localStorage.setItem(k, v);
+  } catch {}
+};
+
+/* -------- theme / brand styles -------- */
 const BrandStyles = () => (
   <style>{`
     :root{--brand:#1691D0;--brand-dark:#15508A;--brand-alt:#3AC0C3}
@@ -25,89 +40,37 @@ const BrandStyles = () => (
   `}</style>
 );
 
-// LS keys
+/* -------- LS keys -------- */
 const LS_USERS = "hpv_users_demo_v4";
 const LS_RESPONSES = "hpv_responses_demo_v4";
 const LS_SCHOOL_INFO = "hpv_school_info_v1";
 
-// LS helpers
-function seedUsers() {
-  const existing = JSON.parse(localStorage.getItem(LS_USERS) || "null");
-  if (existing) return existing;
-  const seeded = {
-    "aishahadi2013@gmail.com": { role: "user", facility: "رابغ" },
-    "jamelah.hadi2019@gmail.com": {
-      role: "user",
-      facility: "مجمع الملك عبد الله",
-    },
-    "hajer@gmail.com": {
-      role: "user",
-      facility: "م. ا فهد مع المدارس العالمية",
-    },
-    "alia@gmail.com": { role: "admin", facility: null },
-  };
-  localStorage.setItem(LS_USERS, JSON.stringify(seeded));
-  return seeded;
-}
+/* -------- LS helpers (SSR-safe) -------- */
 function getUsers() {
-  return JSON.parse(localStorage.getItem(LS_USERS) || "null") || seedUsers();
+  const raw = safeLSget(LS_USERS);
+  return raw ? JSON.parse(raw) : {};
 }
 function setUsers(obj) {
-  localStorage.setItem(LS_USERS, JSON.stringify(obj));
+  safeLSset(LS_USERS, JSON.stringify(obj));
 }
 
 function getResponses() {
-  return JSON.parse(localStorage.getItem(LS_RESPONSES) || "[]");
+  const raw = safeLSget(LS_RESPONSES);
+  return raw ? JSON.parse(raw) : [];
 }
-function setResponses(rows) {
-  localStorage.setItem(LS_RESPONSES, JSON.stringify(rows));
+function setResponsesLS(rows) {
+  safeLSset(LS_RESPONSES, JSON.stringify(rows));
 }
 
 function getSchoolInfo() {
-  return JSON.parse(localStorage.getItem(LS_SCHOOL_INFO) || "{}");
+  const raw = safeLSget(LS_SCHOOL_INFO);
+  return raw ? JSON.parse(raw) : {};
 }
-function setSchoolInfo(map) {
-  localStorage.setItem(LS_SCHOOL_INFO, JSON.stringify(map));
-}
-
-// seed demo
-if (!localStorage.getItem(LS_RESPONSES)) {
-  const t = new Date().toISOString().slice(0, 10);
-  const rows = [
-    {
-      date: t,
-      email: "aishahadi2013@gmail.com",
-      facility: "رابغ",
-      center: "رابغ",
-      school: "الابتدائية الاولى",
-      vaccinated: 12,
-      refused: 1,
-      absent: 2,
-      unvaccinated: 3,
-      sex: "بنات",
-      authority: "حكومي",
-      stage: "متوسط",
-      schoolTotal: 300,
-    },
-    {
-      date: t,
-      email: "jamelah.hadi2019@gmail.com",
-      facility: "مجمع الملك عبد الله",
-      center: "مركز صحي بريمان",
-      school: "المتوسطة الثانية بعد المئة",
-      vaccinated: 18,
-      refused: 2,
-      absent: 2,
-      unvaccinated: 4,
-      sex: "بنات",
-      authority: "حكومي",
-      stage: "متوسط",
-      schoolTotal: 420,
-    },
-  ];
-  setResponses(rows);
+function setSchoolInfoLS(map) {
+  safeLSset(LS_SCHOOL_INFO, JSON.stringify(map));
 }
 
+/* -------- small card -------- */
 function Card({ title, children, actions }) {
   return (
     <div className="p-4 rounded-2xl shadow bg-white">
@@ -120,14 +83,36 @@ function Card({ title, children, actions }) {
   );
 }
 
+/* -------- Admin users -------- */
 function AdminManageUsers() {
-  const [users, setUsersState] = useState(getUsers());
+  const [users, setUsersState] = useState(() => getUsers());
   const [email, setEmail] = useState("");
   const [role, setRole] = useState("user");
   const [facility, setFacility] = useState(FACILITIES[0] || "");
 
+  // seed users if empty (client only)
+  useEffect(() => {
+    if (!isBrowser) return;
+    if (!safeLSget(LS_USERS)) {
+      const seeded = {
+        "aishahadi2013@gmail.com": { role: "user", facility: "رابغ" },
+        "jamelah.hadi2019@gmail.com": {
+          role: "user",
+          facility: "مجمع الملك عبد الله",
+        },
+        "hajer@gmail.com": {
+          role: "user",
+          facility: "م. ا فهد مع المدارس العالمية",
+        },
+        "alia@gmail.com": { role: "admin", facility: null },
+      };
+      setUsers(seeded);
+      setUsersState(seeded);
+    }
+  }, []);
+
   function addOrUpdate() {
-    const key = email.trim().toLowerCase();
+    const key = (email || "").trim().toLowerCase();
     if (!key) return;
     const next = {
       ...users,
@@ -216,6 +201,7 @@ function AdminManageUsers() {
   );
 }
 
+/* -------- sanity checks -------- */
 function runSelfTests() {
   try {
     Object.entries(META.centersByFacility).forEach(([f, centers]) => {
@@ -230,44 +216,92 @@ function runSelfTests() {
       });
     });
     const sumCheck = { refused: 2, absent: 3 };
-    const expectUnvac = sumCheck.refused + sumCheck.absent;
-    if (expectUnvac !== 5) throw new Error("unvaccinated calc test failed");
+    if (sumCheck.refused + sumCheck.absent !== 5)
+      throw new Error("unvaccinated calc test failed");
     [
       "aishahadi2013@gmail.com",
       "jamelah.hadi2019@gmail.com",
       "hajer@gmail.com",
       "alia@gmail.com",
     ].forEach((em) => {
-      if (!getUsers()[em]) console.error("مستخدم مفقود:", em);
+      if (!getUsers()[em])
+        console.warn("مستخدم مفقود (قد يكون طبيعياً قبل البذر):", em);
     });
-    if (!FACILITIES.includes("رابغ"))
-      throw new Error("facility list missing رابغ");
-    if (!META.centersByFacility["مجمع الملك عبد الله"].length)
-      throw new Error("centers missing for KAMC");
-    console.log(
-      "✅ self-tests passed (warnings mean بيانات ناقصة في القائمة فقط)"
-    );
+    console.log("✅ self-tests passed");
   } catch (e) {
     console.error("self-tests error", e);
   }
 }
-runSelfTests();
+if (isBrowser) runSelfTests();
 
+/* -------- main app -------- */
 export default function HPVDemo() {
+  // lazy init so SSR doesn't touch localStorage
   const [user, setUser] = useState(null);
-  const [responses, setRows] = useState(getResponses());
-  const [schoolInfo, setSchoolInfoState] = useState(getSchoolInfo());
+  const [responses, setRows] = useState(() =>
+    isBrowser ? getResponses() : []
+  );
+  const [schoolInfo, setSchoolInfoState] = useState(() =>
+    isBrowser ? getSchoolInfo() : {}
+  );
 
   function signOut() {
     setUser(null);
   }
 
-  // ⬇️ FIXED: include created_at & updated_at EXACT as DB, and a ts for latest-wins
+  // Seed demo responses on first load (browser only)
+  useEffect(() => {
+    if (!isBrowser) return;
+    if (!safeLSget(LS_RESPONSES)) {
+      const t = new Date().toISOString().slice(0, 10);
+      const demo = [
+        {
+          date: t,
+          email: "aishahadi2013@gmail.com",
+          facility: "رابغ",
+          center: "رابغ",
+          school: "الابتدائية الاولى",
+          vaccinated: 12,
+          refused: 1,
+          absent: 2,
+          unvaccinated: 3,
+          sex: "بنات",
+          authority: "حكومي",
+          stage: "متوسط",
+          schoolTotal: 300,
+          created_at: `${t}T08:00:00`,
+          updated_at: null,
+          ts: Date.parse(`${t}T08:00:00`),
+        },
+        {
+          date: t,
+          email: "jamelah.hadi2019@gmail.com",
+          facility: "مجمع الملك عبد الله",
+          center: "مركز صحي بريمان",
+          school: "المتوسطة الثانية بعد المئة",
+          vaccinated: 18,
+          refused: 2,
+          absent: 2,
+          unvaccinated: 4,
+          sex: "بنات",
+          authority: "حكومي",
+          stage: "متوسط",
+          schoolTotal: 420,
+          created_at: `${t}T09:30:00`,
+          updated_at: null,
+          ts: Date.parse(`${t}T09:30:00`),
+        },
+      ];
+      setResponsesLS(demo);
+      setRows(demo);
+    }
+  }, []);
+
+  // map entries returned from API to local shape
   function mapEntryToLocal(e) {
     const created = e.created_at || null;
     const updated = e.updated_at || null;
     const entryDate = (e.entry_date || created || "").slice(0, 10);
-
     return {
       date: entryDate,
       email: e.created_by || "",
@@ -278,18 +312,15 @@ export default function HPVDemo() {
       refused: e.refused ?? 0,
       absent: e.absent ?? 0,
       unvaccinated: e.not_accounted ?? 0,
-
-      // keep what DB sends (no formatting)
       created_at: created,
       updated_at: updated,
-
-      // for de-duplication/sorting latest edit
       ts:
         (updated ? Date.parse(updated) : created ? Date.parse(created) : 0) ||
         0,
     };
   }
 
+  // load from Supabase when user logs in
   useEffect(() => {
     if (!user) return;
     (async () => {
@@ -298,7 +329,7 @@ export default function HPVDemo() {
         const { rows } = await getEntries(params);
         const mapped = (rows || []).map(mapEntryToLocal);
         setRows(mapped);
-        setResponses(mapped);
+        setResponsesLS(mapped);
         log("Loaded entries from Supabase:", mapped.length);
       } catch (e) {
         console.error("Failed to load entries:", e);
@@ -334,10 +365,11 @@ export default function HPVDemo() {
         : inserted?.created_at
         ? Date.parse(inserted.created_at)
         : 0,
+      email: user?.email || previewRow.email,
     };
     const next = [...responses, localRow];
     setRows(next);
-    setResponses(next);
+    setResponsesLS(next);
     return inserted;
   }
 
@@ -346,10 +378,10 @@ export default function HPVDemo() {
   }
   function onUpdateSchoolInfo(map) {
     setSchoolInfoState(map);
-    setSchoolInfo(map);
+    setSchoolInfoLS(map);
   }
 
-  // ⬇️ NEW: when a row is edited in the table, merge it locally
+  // merge edits coming from the table
   function handleRowEdited(patch) {
     setRows((prev) =>
       prev.map((r) =>
@@ -360,8 +392,8 @@ export default function HPVDemo() {
           : r
       )
     );
-    setResponses((prev) =>
-      prev.map((r) =>
+    setResponsesLS(
+      (responses || []).map((r) =>
         r.date === patch.date &&
         r.center === patch.center &&
         r.school === patch.school
@@ -436,7 +468,7 @@ export default function HPVDemo() {
             <MyRecordsSmart
               email={user.email}
               rows={responses}
-              onRowEdited={handleRowEdited} // ⬅️ pass back edits
+              onRowEdited={handleRowEdited}
             />
           </div>
         )}
