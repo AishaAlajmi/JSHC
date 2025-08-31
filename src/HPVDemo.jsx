@@ -1,4 +1,4 @@
-// File: src/HPVDemo.jsx
+// src/HPVDemo.jsx
 import React, { useEffect, useState } from "react";
 import { META, FACILITIES } from "./data/meta";
 import Dashboard from "./components/Dashboard";
@@ -6,7 +6,8 @@ import UserForm from "./components/common/UserForm";
 import MyRecordsSmart from "./components/common/MyRecordsSmart";
 import exportToExcel from "./utils/exportToExcel";
 import { submitDailyEntry, getEntries } from "./lib/storage";
- import LoginPage from "./components/LoginPage";
+import { makeSupabase } from "./lib/supabaseClient"; // <-- add this
+import LoginPage from "./components/LoginPage";
 
 const DEBUG = true;
 const log = (...args) => DEBUG && console.log("[HPVDemo]", ...args);
@@ -160,19 +161,20 @@ export default function HPVDemo() {
 
   function signOut() { setUser(null); setRows([]); }
 
-  // map DB → UI row  (includes schoolTotal)
+  // map DB → UI row (place-aware)
   function mapEntryToLocal(e) {
+    const isPlace = (e.location_type || "").toLowerCase() === "place";
     return {
       date: (e.entry_date || e.created_at || "").slice(0, 10),
       email: e.created_by || "",
       facility: e.facility || "",
-      center: e.clinic_name || "",
-      school: e.school_name || "",
+      center: isPlace ? "" : (e.clinic_name || ""),
+      school: isPlace ? (e.place_category || "") : (e.school_name || ""),
       vaccinated: e.vaccinated ?? 0,
-      refused: e.refused ?? 0,
-      absent: e.absent ?? 0,
-      unvaccinated: e.not_accounted ?? 0,
-      schoolTotal: e.school_total ?? e.schoolTotal ?? 0, // <-- important
+      refused: isPlace ? 0 : (e.refused ?? 0),
+      absent:  isPlace ? 0 : (e.absent ?? 0),
+      unvaccinated: isPlace ? 0 : (e.not_accounted ?? 0),
+      schoolTotal: isPlace ? 0 : (e.school_total ?? e.schoolTotal ?? 0),
       ts: e.ts || 0,
     };
   }
@@ -185,37 +187,19 @@ export default function HPVDemo() {
       return [];
     }
 
-    // read both tables
-    const [{ data: daily, error: e1 }, { data: real, error: e2 }] = await Promise.all([
+    const [{ data: daily, error: e1 }] = await Promise.all([
       supabase.from("daily_entries").select("*"),
-      supabase.from("HPVReal").select("*"),
     ]);
-
-    if (e1 || e2) {
-      console.error("Supabase fallback errors:", e1 || e2);
+    if (e1) {
+      console.error("Supabase fallback error:", e1);
       return [];
     }
 
-    // index HPVReal by id to pull facility/clinic/school/gender
-    const byId = new Map((real || []).map((r) => [r.id, r]));
+    let rows = (daily || []).map(mapEntryToLocal);
 
-    let rows = (daily || []).map((d) => {
-      const extra = byId.get(d.id) || {};
-      return mapEntryToLocal({
-        ...d,
-        facility: d.facility || extra.facility || "",
-        clinic_name: d.clinic_name || extra.clinic_name || "",
-        school_name: d.school_name || extra.school_name || "",
-        gender: d.gender || extra.gender || "",
-        authority: d.authority ?? extra.authority,
-      });
-    });
-
-    // user-only view
     if (activeUser?.role === "user" && activeUser?.email) {
       rows = rows.filter((r) => (r.email || "").toLowerCase() === activeUser.email.toLowerCase());
     }
-
     return rows;
   }
 
@@ -226,21 +210,21 @@ export default function HPVDemo() {
     (async () => {
       try {
         const params = user.role === "user" ? { created_by: user.email } : {};
-        const { rows } = await getEntries(params);
-        const mapped = (rows || []).map(mapEntryToLocal);
+        const { rows, error } = await getEntries(params);
+        if (error) throw error;
 
+        const mapped = (rows || []).map(mapEntryToLocal);
         if (mapped.length > 0) {
           setRows(mapped);
-          log("Loaded entries via /api/entries:", mapped.length);
+          log("Loaded entries via /lib/storage getEntries:", mapped.length);
           return;
         }
 
-        // fallback
         const fb = await loadFromSupabaseFallback(user);
         setRows(fb);
         log("Loaded entries via Supabase fallback:", fb.length);
       } catch (e) {
-        console.warn("Primary API failed; trying Supabase fallback…", e);
+        console.warn("Primary load failed; trying Supabase fallback…", e);
         const fb = await loadFromSupabaseFallback(user);
         setRows(fb);
         log("Loaded entries via Supabase fallback:", fb.length);
@@ -264,32 +248,47 @@ export default function HPVDemo() {
     return [...list, row];
   }
 
-  // Save to API, then upsert locally
+  // Save to API, then upsert locally (supports school & place)
   async function addRow(previewRow) {
+    const isPlace = previewRow.mode === "place";
     const payload = {
+      entry_date: previewRow.date,
       facility: previewRow.facility,
-      clinic_name: previewRow.center,
-      school_name: previewRow.school,
-      gender: previewRow.sex || "غير محدد",
-      authority: previewRow.authority,
-      stage: previewRow.stage,
-      vaccinated: previewRow.vaccinated,
-      refused: previewRow.refused,
-      absent: previewRow.absent,
-      not_accounted: previewRow.unvaccinated,
-      school_total: previewRow.schoolTotal,
       created_by: previewRow.email || (user?.email ?? ""),
+
+      location_type: isPlace ? "place" : "school",
+      place_category: isPlace ? previewRow.place : null,
+
+      clinic_name: isPlace ? null : previewRow.center,
+      school_name: isPlace ? null : previewRow.school,
+
+      gender: isPlace ? null : (previewRow.sex || null),
+      authority: isPlace ? null : (previewRow.authority || null),
+      stage: isPlace ? null : (previewRow.stage || null),
+
+      vaccinated: Number(previewRow.vaccinated) || 0,
+      refused: isPlace ? 0 : Number(previewRow.refused || 0),
+      absent:  isPlace ? 0 : Number(previewRow.absent || 0),
+      not_accounted: isPlace ? 0 : Number(previewRow.unvaccinated || 0),
+      school_total:  isPlace ? 0 : Number(previewRow.schoolTotal || 0),
     };
 
-    const inserted = await submitDailyEntry(payload, { mode: "pair" });
+    const { data, error } = await submitDailyEntry(payload);
+    if (error) throw error;
 
     const localRow = {
       ...previewRow,
       email: user?.email || previewRow.email || "",
-      date: previewRow.date || (inserted?.created_at || inserted?.entry_date || "").slice(0, 10),
+      date: previewRow.date || (data?.entry_date || data?.created_at || "").slice(0, 10),
+      center: isPlace ? "" : previewRow.center,
+      school: isPlace ? previewRow.place : previewRow.school,
+      refused: isPlace ? 0 : previewRow.refused,
+      absent:  isPlace ? 0 : previewRow.absent,
+      unvaccinated: isPlace ? 0 : previewRow.unvaccinated,
+      schoolTotal: isPlace ? 0 : previewRow.schoolTotal,
     };
     setRows((prev) => upsertLocalRow(prev, localRow));
-    return inserted;
+    return data;
   }
 
   function onExport(rows) { exportToExcel(rows); }
