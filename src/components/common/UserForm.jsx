@@ -1,6 +1,6 @@
 // File: src/components/common/UserForm.jsx
 import React, { useEffect, useState, useMemo } from "react";
-import { submitDailyEntry, UPSERT_MODES } from "../../lib/storage";
+import { submitDailyEntry } from "../../lib/storage";
 import { getSchoolStatic } from "../../data/meta"; // fixed info
 
 const DEBUG = true;
@@ -89,8 +89,7 @@ export default function UserForm({
   onSubmit,
   schoolInfo,
 }) {
-  // === NEW: Mode selector ===
-  // 'school' (default if centers exist) OR 'place'
+  // === Mode selector ===
   const centers = meta?.centersByFacility?.[facility] || [];
   const [mode, setMode] = useState(centers.length > 0 ? "school" : "place");
 
@@ -112,7 +111,7 @@ export default function UserForm({
   const [status, setStatus] = useState({ type: "idle", msg: "" });
   const [preview, setPreview] = useState(null);
 
-  // Local component styling (Arabic-friendly)
+  // Arabic-friendly styles
   const brandStyles = useMemo(
     () => (
       <style>{`
@@ -277,27 +276,34 @@ export default function UserForm({
     log("previewData (school)", data);
   }
 
+  // ✅ UPDATED: sends the new clean payload (no UPSERT_MODES, no "—")
   async function saveToAPI(p) {
-    // Shared payload columns expected by backend
     const isPlace = p.mode === "place";
+
     const input = {
+      entry_date: p.date, // YYYY-MM-DD from todayStr()
       facility: p.facility,
-      clinic_name: isPlace ? "—" : p.center, // invisible center for places
-      school_name: isPlace ? p.place : p.school, // store the place label here
-      gender: isPlace ? null : p.sex || "غير محدد",
+      created_by: email || p.email || null,
+
+      location_type: isPlace ? "place" : "school",
+      place_category: isPlace ? p.place : null,
+
+      clinic_name: isPlace ? null : p.center,
+      school_name: isPlace ? null : p.school,
+
+      gender: isPlace ? null : p.sex || null,
       authority: isPlace ? null : p.authority || null,
       stage: isPlace ? null : p.stage || null,
+
       vaccinated: Number(p.vaccinated) || 0,
       refused: isPlace ? 0 : Number(p.refused) || 0,
-      absent: isPlace ? 0 : Number(p.absent) || 0,
+      absent:  isPlace ? 0 : Number(p.absent) || 0,
       not_accounted: isPlace ? 0 : Number(p.unvaccinated) || 0,
-      school_total: isPlace ? 0 : Number(p.schoolTotal) || 0,
-      created_by: email || p.email || "",
+      school_total:  isPlace ? 0 : Number(p.schoolTotal) || 0,
     };
 
     log("submitDailyEntry payload ->", input);
-    // Upsert by (created_by, clinic_name, school_name)
-    const res = await submitDailyEntry(input, { mode: UPSERT_MODES.PER_PAIR });
+    const res = await submitDailyEntry(input);
 
     if (res && typeof res === "object" && ("error" in res || "data" in res)) {
       if (res.error) {
@@ -375,7 +381,7 @@ export default function UserForm({
         </div>
       </Card>
 
-      {/* === NEW: Mode selection === */}
+      {/* Mode selection */}
       <Card>
         <div className="grid md:grid-cols-3 gap-4">
           <div className="flex flex-col md:col-span-3">
@@ -462,10 +468,7 @@ export default function UserForm({
           </Card>
 
           {/* fixed info */}
-          <Card
-            title="الحقول الثابتة"
-            subtitle="تُعرض للمرجع ولا يمكن تعديلها هنا."
-          >
+          <Card title="الحقول الثابتة" subtitle="تُعرض للمرجع ولا يمكن تعديلها هنا.">
             <div className="grid md:grid-cols-4 gap-3 text-sm">
               <div className="flex flex-col">
                 <label className="hpv-label">الجنس</label>
@@ -567,7 +570,7 @@ export default function UserForm({
                   className="hpv-input bg-gray-100"
                 />
                 <span className="hpv-help mt-1">
-                  يتم تسجيل الحملة كموقع عام وليس مدرسة.
+                  سيتم حفظ الإدخال كموقع عام (ليس مدرسة).
                 </span>
               </div>
 
@@ -586,7 +589,7 @@ export default function UserForm({
                   ))}
                 </select>
                 <span className="hpv-help mt-1">
-                  سيتم حفظ المكان في حقل (اسم المدرسة) ليلائم قاعدة البيانات.
+                  سيُحفظ هذا الخيار في حقل <b>place_category</b> بقاعدة البيانات.
                 </span>
               </div>
             </div>
@@ -608,24 +611,16 @@ export default function UserForm({
 
               <div className="flex flex-col">
                 <label className="hpv-label">عدد الرفض</label>
-                <input
-                  value="0"
-                  disabled
-                  className="hpv-input bg-gray-100"
-                />
+                <input value="0" disabled className="hpv-input bg-gray-100" />
               </div>
 
               <div className="flex flex-col">
                 <label className="hpv-label">عدد الغياب</label>
-                <input
-                  value="0"
-                  disabled
-                  className="hpv-input bg-gray-100"
-                />
+                <input value="0" disabled className="hpv-input bg-gray-100" />
               </div>
             </div>
             <div className="mt-3">
-              <Badge>سيتم احتساب (غير مطعّم) = 0 للأماكن الأخرى.</Badge>
+              <Badge>غير مطعّم = 0 للأماكن الأخرى.</Badge>
             </div>
           </Card>
         </>
