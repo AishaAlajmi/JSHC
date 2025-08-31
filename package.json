@@ -11,7 +11,7 @@
     "scrape:providers": "node scripts/scrape-mbt.mjs"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.46.1",
+    "@supabase/supabase-js": "^2.56.1",
     "framer-motion": "^12.23.12",
     "lucide-react": "^0.539.0",
     "react": "^19.1.1",
