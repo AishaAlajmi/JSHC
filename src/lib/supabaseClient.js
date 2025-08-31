@@ -6,8 +6,8 @@ import { createClient } from "@supabase/supabase-js";
  * Returns null (not throws) if env keys are missing so UI can show a friendly message.
  */
 export function makeSupabase() {
-  const url = import.meta.env.VITE_SUPABASE_URL;
-  const anon = import.meta.env.VITE_SUPABASE_ANON_KEY;
+  const url = import.meta.env.SUPABASE_URL;
+  const anon = import.meta.env.SUPABASE_SERVICE_ROLE_KEY;
 
   if (!url || !anon) {
     console.error("Missing VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY");
