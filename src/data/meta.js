@@ -1169,6 +1169,7 @@ const RABIGH_SCHOOLS = [
   // ===== المرخه =====
   { center: "المرخه", school: "كعب بن زهير الابتدائية", gender: "", authority: "حكومي", stage: "ابتدائي", total: 51 },
 
+  
   // ===== الابواء =====
   { center: "الابواء", school: "الابتدائيه الثانيه", gender: "", authority: "حكومي", stage: "ابتدائي", total: 110 },
   { center: "الابواء", school: "الابتدائية الاولى", gender: "", authority: "حكومي", stage: "ابتدائي", total: 170 },

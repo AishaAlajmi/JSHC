@@ -89,7 +89,12 @@ export default function UserForm({
   onSubmit,
   schoolInfo,
 }) {
+  // === NEW: Mode selector ===
+  // 'school' (default if centers exist) OR 'place'
   const centers = meta?.centersByFacility?.[facility] || [];
+  const [mode, setMode] = useState(centers.length > 0 ? "school" : "place");
+
+  // --- School mode state ---
   const [center, setCenter] = useState(centers[0] || "");
   const schools = meta
     ? meta.schoolsByCenter?.[facility + "::" + center] || []
@@ -98,6 +103,12 @@ export default function UserForm({
   const [vaccinated, setVaccinated] = useState("");
   const [refused, setRefused] = useState("");
   const [absent, setAbsent] = useState("");
+
+  // --- Place mode state ---
+  const PLACE_OPTIONS = ["سجون", "دار الأيتام", "مولات", "أحياء عشوائية"];
+  const [place, setPlace] = useState("");
+
+  // shared UI state
   const [status, setStatus] = useState({ type: "idle", msg: "" });
   const [preview, setPreview] = useState(null);
 
@@ -105,6 +116,7 @@ export default function UserForm({
   const brandStyles = useMemo(
     () => (
       <style>{`
+      :root{--brand:#1691D0;--brand-dark:#15508A;--brand-alt:#3AC0C3}
       @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&display=swap');
       .hpv-form, .hpv-form * { font-family: "Tajawal","Noto Kufi Arabic","Cairo",system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif !important; }
       .hpv-input, .hpv-select { border-radius: .9rem; padding: .75rem 1rem; border: 1px solid #e5e7eb; background:#fff; transition: border-color .15s, box-shadow .15s, background .15s; }
@@ -123,25 +135,40 @@ export default function UserForm({
     []
   );
 
-  // keep center valid for current facility
+  // keep center valid for current facility (school mode only)
   useEffect(() => {
+    if (mode !== "school") return;
     setCenter((curr) => (centers.includes(curr) ? curr : centers[0] || ""));
-  }, [facility, meta]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [facility, meta, mode]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // default the first school whenever center changes
+  // default first school whenever center changes (school mode only)
   useEffect(() => {
+    if (mode !== "school") return;
     const s =
       (meta?.schoolsByCenter?.[facility + "::" + center] || [""])[0] || "";
     setSchool(s);
-  }, [center, facility, meta]);
+  }, [center, facility, meta, mode]);
+
+  // when switching mode, clear statuses and numbers
+  useEffect(() => {
+    setStatus({ type: "idle", msg: "" });
+    setPreview(null);
+    setVaccinated("");
+    setRefused("");
+    setAbsent("");
+    setPlace("");
+  }, [mode]);
 
   // Auto-fill “الحقول الثابتة” from meta; fallback to schoolInfo (if provided)
   const fixedMeta = useMemo(
-    () => getSchoolStatic(facility, center, school),
-    [facility, center, school]
+    () => (mode === "school" ? getSchoolStatic(facility, center, school) : {}),
+    [facility, center, school, mode]
   );
 
   const fixed = useMemo(() => {
+    if (mode !== "school") {
+      return { sex: "", authority: "", stage: "", schoolTotal: 0 };
+    }
     const fallback = schoolInfo?.[school] || {};
     return {
       sex: fixedMeta.gender || fallback.sex || "",
@@ -152,13 +179,23 @@ export default function UserForm({
         Number(fallback.schoolTotal) ||
         0,
     };
-  }, [fixedMeta, school, schoolInfo]);
+  }, [fixedMeta, school, schoolInfo, mode]);
 
   const unvaccinated =
-    (numberOrNull(refused) || 0) + (numberOrNull(absent) || 0);
+    mode === "school"
+      ? (numberOrNull(refused) || 0) + (numberOrNull(absent) || 0)
+      : 0;
 
-  // extra client validation helps avoid backend errors
+  // completeness bar
   const completeness = useMemo(() => {
+    if (mode === "place") {
+      let score = 0,
+        total = 2; // place + vaccinated
+      if (place) score++;
+      if (numberOrNull(vaccinated) !== null) score++;
+      return Math.round((score / total) * 100);
+    }
+    // school mode
     let score = 0,
       total = 6;
     if (facility) score++;
@@ -168,10 +205,39 @@ export default function UserForm({
     if (numberOrNull(refused) !== null) score++;
     if (numberOrNull(absent) !== null) score++;
     return Math.round((score / total) * 100);
-  }, [facility, center, school, vaccinated, refused, absent]);
+  }, [mode, facility, center, school, vaccinated, refused, absent, place]);
 
   function askPreview(e) {
     e.preventDefault();
+
+    if (mode === "place") {
+      const v = numberOrNull(vaccinated);
+      if (!place || v === null) {
+        setStatus({ type: "error", msg: "اختر المكان وأدخل عدد المطعّمين" });
+        return;
+      }
+      const data = {
+        mode,
+        date: todayStr(),
+        email,
+        facility,
+        place,
+        vaccinated: v,
+        refused: 0,
+        absent: 0,
+        unvaccinated: 0,
+        sex: null,
+        authority: null,
+        stage: null,
+        schoolTotal: 0,
+      };
+      setStatus({ type: "idle", msg: "" });
+      setPreview(data);
+      log("previewData (place)", data);
+      return;
+    }
+
+    // mode === 'school'
     const v = numberOrNull(vaccinated);
     const r = numberOrNull(refused);
     const a = numberOrNull(absent);
@@ -190,6 +256,7 @@ export default function UserForm({
     }
 
     const data = {
+      mode,
       date: todayStr(),
       email,
       facility,
@@ -207,27 +274,29 @@ export default function UserForm({
 
     setStatus({ type: "idle", msg: "" });
     setPreview(data);
-    log("previewData", data);
+    log("previewData (school)", data);
   }
 
   async function saveToAPI(p) {
+    // Shared payload columns expected by backend
+    const isPlace = p.mode === "place";
     const input = {
       facility: p.facility,
-      clinic_name: p.center,
-      school_name: p.school,
-      gender: p.sex || "غير محدد",
-      authority: p.authority || null,
-      stage: p.stage || null,
-      vaccinated: Number(p.vaccinated),
-      refused: Number(p.refused),
-      absent: Number(p.absent),
-      not_accounted: Number(p.unvaccinated),
-      school_total: Number(p.schoolTotal) || 0,
+      clinic_name: isPlace ? "—" : p.center, // invisible center for places
+      school_name: isPlace ? p.place : p.school, // store the place label here
+      gender: isPlace ? null : p.sex || "غير محدد",
+      authority: isPlace ? null : p.authority || null,
+      stage: isPlace ? null : p.stage || null,
+      vaccinated: Number(p.vaccinated) || 0,
+      refused: isPlace ? 0 : Number(p.refused) || 0,
+      absent: isPlace ? 0 : Number(p.absent) || 0,
+      not_accounted: isPlace ? 0 : Number(p.unvaccinated) || 0,
+      school_total: isPlace ? 0 : Number(p.schoolTotal) || 0,
       created_by: email || p.email || "",
     };
 
     log("submitDailyEntry payload ->", input);
-    // ⬅️ Upsert by (created_by, clinic_name, school_name)
+    // Upsert by (created_by, clinic_name, school_name)
     const res = await submitDailyEntry(input, { mode: UPSERT_MODES.PER_PAIR });
 
     if (res && typeof res === "object" && ("error" in res || "data" in res)) {
@@ -247,9 +316,11 @@ export default function UserForm({
       const saver = onSubmit || saveToAPI;
       const result = await saver(preview);
       log("save result ->", result);
+      // reset fields
       setVaccinated("");
       setRefused("");
       setAbsent("");
+      setPlace("");
       setPreview(null);
       setStatus({ type: "ok", msg: "تم الحفظ بنجاح" });
     } catch (e) {
@@ -269,7 +340,7 @@ export default function UserForm({
         <div className="flex flex-wrap items-center gap-3">
           <div className="hpv-section-title">
             <span className="dot" />
-            <span>بيانات المدرسة والتطعيم</span>
+            <span>بيانات الإدخال</span>
           </div>
           <div className="ml-auto flex items-center gap-2">
             <Badge
@@ -304,111 +375,261 @@ export default function UserForm({
         </div>
       </Card>
 
-      {/* facility / center / school */}
+      {/* === NEW: Mode selection === */}
       <Card>
-        <div className="grid md:grid-cols-2 gap-4">
-          <div className="flex flex-col">
-            <label className="hpv-label">المنشأة الصحية</label>
-            <input value={facility} disabled className="hpv-input bg-gray-100" />
-            <span className="hpv-help mt-1">يتم تحديدها تلقائيًا حسب صلاحياتك.</span>
-          </div>
-          <div className="flex flex-col">
-            <label className="hpv-label">اسم المركز الصحي</label>
-            <select
-              value={center}
-              onChange={(e) => setCenter(e.target.value)}
-              className="hpv-select"
-            >
-              {centers.map((c) => (
-                <option key={c} value={c}>{c}</option>
-              ))}
-            </select>
-          </div>
-          <div className="flex flex-col md:col-span-2">
-            <label className="hpv-label">اسم المدرسة</label>
-            <select
-              value={school}
-              onChange={(e) => setSchool(e.target.value)}
-              className="hpv-select"
-            >
-              {schools.length === 0 && (
-                <option value="">— لا توجد مدارس لهذا المركز —</option>
-              )}
-              {schools.map((s) => (
-                <option key={s} value={s}>{s}</option>
-              ))}
-            </select>
+        <div className="grid md:grid-cols-3 gap-4">
+          <div className="flex flex-col md:col-span-3">
+            <label className="hpv-label">نوع الإدخال</label>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => setMode("school")}
+                className={`hpv-btn-ghost ${mode === "school" ? "ring-2 ring-sky-300" : ""}`}
+              >
+                مدارس عبر المركز الصحي
+              </button>
+              <button
+                type="button"
+                onClick={() => setMode("place")}
+                className={`hpv-btn-ghost ${mode === "place" ? "ring-2 ring-sky-300" : ""}`}
+              >
+                أماكن أخرى (سجون/مولات/دار الأيتام/أحياء)
+              </button>
+            </div>
+            {mode === "school" && centers.length === 0 && (
+              <p className="hpv-help mt-2 text-red-600">
+                لا توجد مراكز صحية مرتبطة بمنشأتك — يمكنك استخدام وضع "أماكن أخرى".
+              </p>
+            )}
           </div>
         </div>
       </Card>
 
-      {/* fixed info */}
-      <Card title="الحقول الثابتة" subtitle="تُعرض للمرجع ولا يمكن تعديلها هنا.">
-        <div className="grid md:grid-cols-4 gap-3 text-sm">
-          <div className="flex flex-col">
-            <label className="hpv-label">الجنس</label>
-            <input disabled className="hpv-input bg-gray-100" value={fixed.sex || "غير محدد"} />
-          </div>
-          <div className="flex flex-col">
-            <label className="hpv-label">السلطة</label>
-            <input disabled className="hpv-input bg-gray-100" value={fixed.authority || "غير محدد"} />
-          </div>
-          <div className="flex flex-col">
-            <label className="hpv-label">المرحلة</label>
-            <input disabled className="hpv-input bg-gray-100" value={fixed.stage || "غير محدد"} />
-          </div>
-          <div className="flex flex-col">
-            <label className="hpv-label">إجمالي المدرسة</label>
-            <input disabled className="hpv-input bg-gray-100" value={fixed.schoolTotal || 0} />
-          </div>
-        </div>
-      </Card>
+      {/* ======= SCHOOL MODE UI ======= */}
+      {mode === "school" && (
+        <>
+          {/* facility / center / school */}
+          <Card>
+            <div className="grid md:grid-cols-2 gap-4">
+              <div className="flex flex-col">
+                <label className="hpv-label">المنشأة الصحية</label>
+                <input
+                  value={facility}
+                  disabled
+                  className="hpv-input bg-gray-100"
+                />
+                <span className="hpv-help mt-1">
+                  يتم تحديدها تلقائيًا حسب صلاحياتك.
+                </span>
+              </div>
 
-      {/* numbers */}
-      <Card>
-        <div className="grid md:grid-cols-4 gap-4">
-          <div className="flex flex-col">
-            <label className="hpv-label">عدد المطعّمين</label>
-            <input
-              type="number"
-              min="0"
-              value={vaccinated}
-              onChange={(e) => setVaccinated(e.target.value)}
-              className="hpv-input"
-              inputMode="numeric"
-            />
-          </div>
-          <div className="flex flex-col">
-            <label className="hpv-label">عدد الرفض</label>
-            <input
-              type="number"
-              min="0"
-              value={refused}
-              onChange={(e) => setRefused(e.target.value)}
-              className="hpv-input"
-              inputMode="numeric"
-            />
-          </div>
-          <div className="flex flex-col">
-            <label className="hpv-label">عدد الغياب</label>
-            <input
-              type="number"
-              min="0"
-              value={absent}
-              onChange={(e) => setAbsent(e.target.value)}
-              className="hpv-input"
-              inputMode="numeric"
-            />
-          </div>
-          <div className="flex flex-col">
-            <label className="hpv-label">غير مطعّم (محسوب)</label>
-            <input value={unvaccinated} disabled className="hpv-input bg-gray-100" />
-          </div>
-        </div>
-        <div className="mt-3">
-          <Badge tone="warn">تذكير: غير مطعّم = رفض + غياب</Badge>
-        </div>
-      </Card>
+              <div className="flex flex-col">
+                <label className="hpv-label">اسم المركز الصحي</label>
+                <select
+                  value={center}
+                  onChange={(e) => setCenter(e.target.value)}
+                  className="hpv-select"
+                >
+                  {centers.length === 0 && (
+                    <option value="">— لا توجد مراكز —</option>
+                  )}
+                  {centers.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex flex-col md:col-span-2">
+                <label className="hpv-label">اسم المدرسة</label>
+                <select
+                  value={school}
+                  onChange={(e) => setSchool(e.target.value)}
+                  className="hpv-select"
+                >
+                  {schools.length === 0 && (
+                    <option value="">— لا توجد مدارس لهذا المركز —</option>
+                  )}
+                  {schools.map((s) => (
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          </Card>
+
+          {/* fixed info */}
+          <Card
+            title="الحقول الثابتة"
+            subtitle="تُعرض للمرجع ولا يمكن تعديلها هنا."
+          >
+            <div className="grid md:grid-cols-4 gap-3 text-sm">
+              <div className="flex flex-col">
+                <label className="hpv-label">الجنس</label>
+                <input
+                  disabled
+                  className="hpv-input bg-gray-100"
+                  value={fixed.sex || "غير محدد"}
+                />
+              </div>
+              <div className="flex flex-col">
+                <label className="hpv-label">السلطة</label>
+                <input
+                  disabled
+                  className="hpv-input bg-gray-100"
+                  value={fixed.authority || "غير محدد"}
+                />
+              </div>
+              <div className="flex flex-col">
+                <label className="hpv-label">المرحلة</label>
+                <input
+                  disabled
+                  className="hpv-input bg-gray-100"
+                  value={fixed.stage || "غير محدد"}
+                />
+              </div>
+              <div className="flex flex-col">
+                <label className="hpv-label">إجمالي المدرسة</label>
+                <input
+                  disabled
+                  className="hpv-input bg-gray-100"
+                  value={fixed.schoolTotal || 0}
+                />
+              </div>
+            </div>
+          </Card>
+
+          {/* numbers */}
+          <Card>
+            <div className="grid md:grid-cols-4 gap-4">
+              <div className="flex flex-col">
+                <label className="hpv-label">عدد المطعّمين</label>
+                <input
+                  type="number"
+                  min="0"
+                  value={vaccinated}
+                  onChange={(e) => setVaccinated(e.target.value)}
+                  className="hpv-input"
+                  inputMode="numeric"
+                />
+              </div>
+              <div className="flex flex-col">
+                <label className="hpv-label">عدد الرفض</label>
+                <input
+                  type="number"
+                  min="0"
+                  value={refused}
+                  onChange={(e) => setRefused(e.target.value)}
+                  className="hpv-input"
+                  inputMode="numeric"
+                />
+              </div>
+              <div className="flex flex-col">
+                <label className="hpv-label">عدد الغياب</label>
+                <input
+                  type="number"
+                  min="0"
+                  value={absent}
+                  onChange={(e) => setAbsent(e.target.value)}
+                  className="hpv-input"
+                  inputMode="numeric"
+                />
+              </div>
+              <div className="flex flex-col">
+                <label className="hpv-label">غير مطعّم (محسوب)</label>
+                <input
+                  value={unvaccinated}
+                  disabled
+                  className="hpv-input bg-gray-100"
+                />
+              </div>
+            </div>
+            <div className="mt-3">
+              <Badge tone="warn">تذكير: غير مطعّم = رفض + غياب</Badge>
+            </div>
+          </Card>
+        </>
+      )}
+
+      {/* ======= PLACE MODE UI ======= */}
+      {mode === "place" && (
+        <>
+          <Card>
+            <div className="grid md:grid-cols-2 gap-4">
+              <div className="flex flex-col">
+                <label className="hpv-label">المنشأة الصحية</label>
+                <input
+                  value={facility || "—"}
+                  disabled
+                  className="hpv-input bg-gray-100"
+                />
+                <span className="hpv-help mt-1">
+                  يتم تسجيل الحملة كموقع عام وليس مدرسة.
+                </span>
+              </div>
+
+              <div className="flex flex-col">
+                <label className="hpv-label">المكان</label>
+                <select
+                  value={place}
+                  onChange={(e) => setPlace(e.target.value)}
+                  className="hpv-select"
+                >
+                  <option value="">— اختر المكان —</option>
+                  {PLACE_OPTIONS.map((p) => (
+                    <option key={p} value={p}>
+                      {p}
+                    </option>
+                  ))}
+                </select>
+                <span className="hpv-help mt-1">
+                  سيتم حفظ المكان في حقل (اسم المدرسة) ليلائم قاعدة البيانات.
+                </span>
+              </div>
+            </div>
+          </Card>
+
+          <Card>
+            <div className="grid md:grid-cols-3 gap-4">
+              <div className="flex flex-col">
+                <label className="hpv-label">عدد المطعّمين</label>
+                <input
+                  type="number"
+                  min="0"
+                  value={vaccinated}
+                  onChange={(e) => setVaccinated(e.target.value)}
+                  className="hpv-input"
+                  inputMode="numeric"
+                />
+              </div>
+
+              <div className="flex flex-col">
+                <label className="hpv-label">عدد الرفض</label>
+                <input
+                  value="0"
+                  disabled
+                  className="hpv-input bg-gray-100"
+                />
+              </div>
+
+              <div className="flex flex-col">
+                <label className="hpv-label">عدد الغياب</label>
+                <input
+                  value="0"
+                  disabled
+                  className="hpv-input bg-gray-100"
+                />
+              </div>
+            </div>
+            <div className="mt-3">
+              <Badge>سيتم احتساب (غير مطعّم) = 0 للأماكن الأخرى.</Badge>
+            </div>
+          </Card>
+        </>
+      )}
 
       {/* actions */}
       <div className="flex flex-wrap gap-2 items-center">
@@ -451,20 +672,33 @@ export default function UserForm({
         }
       >
         {preview && (
-          <div className="grid md:grid-cols-3 gap-3 text-sm">
-            <div><b>التاريخ:</b> {preview.date}</div>
-            <div><b>المنشأة:</b> {preview.facility}</div>
-            <div><b>المركز:</b> {preview.center}</div>
-            <div><b>المدرسة:</b> {preview.school}</div>
-            <div><b>مطعّم:</b> {preview.vaccinated}</div>
-            <div><b>رفض:</b> {preview.refused}</div>
-            <div><b>غياب:</b> {preview.absent}</div>
-            <div><b>غير مطعّم:</b> {preview.unvaccinated}</div>
-            <div><b>الجنس:</b> {preview.sex || "—"}</div>
-            <div><b>السلطة:</b> {preview.authority || "—"}</div>
-            <div><b>المرحلة:</b> {preview.stage || "—"}</div>
-            <div><b>العدد الإجمالي للمدرسة:</b> {preview.schoolTotal || 0}</div>
-          </div>
+          <>
+            {preview.mode === "place" ? (
+              <div className="grid md:grid-cols-3 gap-3 text-sm">
+                <div><b>التاريخ:</b> {preview.date}</div>
+                <div><b>المنشأة:</b> {preview.facility}</div>
+                <div><b>المكان:</b> {preview.place}</div>
+                <div><b>مطعّم:</b> {preview.vaccinated}</div>
+                <div><b>رفض:</b> 0</div>
+                <div><b>غياب:</b> 0</div>
+              </div>
+            ) : (
+              <div className="grid md:grid-cols-3 gap-3 text-sm">
+                <div><b>التاريخ:</b> {preview.date}</div>
+                <div><b>المنشأة:</b> {preview.facility}</div>
+                <div><b>المركز:</b> {preview.center}</div>
+                <div><b>المدرسة:</b> {preview.school}</div>
+                <div><b>مطعّم:</b> {preview.vaccinated}</div>
+                <div><b>رفض:</b> {preview.refused}</div>
+                <div><b>غياب:</b> {preview.absent}</div>
+                <div><b>غير مطعّم:</b> {preview.unvaccinated}</div>
+                <div><b>الجنس:</b> {preview.sex || "—"}</div>
+                <div><b>السلطة:</b> {preview.authority || "—"}</div>
+                <div><b>المرحلة:</b> {preview.stage || "—"}</div>
+                <div><b>العدد الإجمالي للمدرسة:</b> {preview.schoolTotal || 0}</div>
+              </div>
+            )}
+          </>
         )}
       </Modal>
     </form>

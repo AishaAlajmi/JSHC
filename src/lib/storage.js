@@ -15,15 +15,15 @@ function todayStr() {
  * - Ensures `entry_date` is present (defaults to today or `row.date`).
  * - Sends a hint `_upsert` so the API can decide onConflict target.
  *
- * @param {Object} row  - your payload (clinic_name, school_name, vaccinated, ...)
+ * @param {Object} row
  * @param {Object} [opts]
  * @param {'pair'|'per_day'} [opts.mode='per_day']
  */
 export async function submitDailyEntry(row, { mode = UPSERT_MODES.PER_DAY } = {}) {
   const payload = {
     ...row,
-    entry_date: row.entry_date || row.date || todayStr(), // <-- important
-    _upsert: mode, // server will read this to pick onConflict
+    entry_date: row.entry_date || row.date || todayStr(),
+    _upsert: mode,
   };
 
   const res = await fetch("/api/submissions", {
@@ -40,8 +40,8 @@ export async function submitDailyEntry(row, { mode = UPSERT_MODES.PER_DAY } = {}
 }
 
 /**
- * Load entries (your API can accept filters like created_by, date range, etc.)
- * Example: getEntries({ created_by: email })
+ * Load entries (server can accept filters like created_by, date range, etc.)
+ * Returns { rows }
  */
 export async function getEntries(params = {}) {
   const qs = new URLSearchParams(params).toString();
