@@ -6,26 +6,11 @@ export const UPSERT_KEYS = {
   PLACE:  "created_by,facility,place_category,entry_date",
 };
 
-/**
- * input shape (school):
- * {
- *   entry_date, facility, clinic_name, school_name,
- *   gender, authority, stage,
- *   vaccinated, refused, absent, not_accounted, school_total,
- *   created_by, location_type: 'school'
- * }
- *
- * input shape (place):
- * {
- *   entry_date, facility, place_category,
- *   vaccinated,
- *   created_by, location_type: 'place'
- * }
- */
 export async function submitDailyEntry(input) {
   const supabase = makeSupabase();
+  if (!supabase) return { error: { message: "Supabase env not configured" } };
 
-  const isPlace = (input.location_type === "place");
+  const isPlace = input.location_type === "place";
   const table = isPlace ? "place_entries" : "daily_entries";
   const onConflict = isPlace ? UPSERT_KEYS.PLACE : UPSERT_KEYS.SCHOOL;
 
@@ -41,21 +26,17 @@ export async function submitDailyEntry(input) {
       }
     : {
         entry_date: input.entry_date || today,
-
         facility: input.facility ?? null,
         clinic_name: input.clinic_name ?? null,
         school_name: input.school_name ?? null,
-
         gender: input.gender ?? null,
         authority: input.authority ?? null,
         stage: input.stage ?? null,
-
         vaccinated: Number(input.vaccinated || 0),
         refused: Number(input.refused || 0),
         absent: Number(input.absent || 0),
         not_accounted: Number(input.not_accounted || 0),
         school_total: Number(input.school_total || 0),
-
         created_by: input.created_by || input.email || null,
       };
 
@@ -69,11 +50,11 @@ export async function submitDailyEntry(input) {
   return { data };
 }
 
-/** Read for dashboards. Pass {from,to,facility,locationType} if you want filters */
 export async function getEntries({ from, to, facility, locationType } = {}) {
   const supabase = makeSupabase();
+  if (!supabase) return { rows: [] };
 
-  // Prefer the unified view if you created it; else fall back to daily_entries
+  // Use the unified view if you created it; otherwise switch to daily_entries
   let q = supabase.from("combined_entries").select("*");
 
   if (from) q = q.gte("entry_date", from);

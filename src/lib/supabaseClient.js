@@ -1,20 +1,18 @@
-// src/lib/supabaseClient.js
+// File: src/lib/supabaseClient.js
 import { createClient } from "@supabase/supabase-js";
 
-/**
- * Creates a Supabase client from Vite env.
- * Returns null (not throws) if env keys are missing so UI can show a friendly message.
- */
-export function makeSupabase() {
-  const url = import.meta.env.SUPABASE_URL;
-  const anon = import.meta.env.SUPABASE_SERVICE_ROLE_KEY;
+const URL = import.meta.env.VITE_SUPABASE_URL?.trim();
+const KEY = import.meta.env.VITE_SUPABASE_ANON_KEY?.trim();
 
-  if (!url || !anon) {
+/** Returns a Supabase client or null (does NOT throw). */
+export function makeSupabase() {
+  if (!URL || !KEY) {
     console.error("Missing VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY");
     return null;
   }
-  return createClient(url, anon, {
+  return createClient(URL, KEY, {
     auth: { persistSession: false },
-    global: { headers: { "x-app": "hpv" } },
   });
 }
+
+export const hasSupabaseEnv = () => Boolean(URL && KEY);
