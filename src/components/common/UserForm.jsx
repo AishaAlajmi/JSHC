@@ -89,7 +89,7 @@ export default function UserForm({
   onSubmit,
   schoolInfo,
 }) {
-  // === Mode selector ===
+  // Mode selector — 'school' (default if centers exist) OR 'place'
   const centers = meta?.centersByFacility?.[facility] || [];
   const [mode, setMode] = useState(centers.length > 0 ? "school" : "place");
 
@@ -276,12 +276,12 @@ export default function UserForm({
     log("previewData (school)", data);
   }
 
-  // ✅ UPDATED: sends the new clean payload (no UPSERT_MODES, no "—")
+  // ✅ NEW: correct payloads for school/place
   async function saveToAPI(p) {
     const isPlace = p.mode === "place";
 
     const input = {
-      entry_date: p.date, // YYYY-MM-DD from todayStr()
+      entry_date: p.date,                 // "YYYY-MM-DD"
       facility: p.facility,
       created_by: email || p.email || null,
 
@@ -291,28 +291,21 @@ export default function UserForm({
       clinic_name: isPlace ? null : p.center,
       school_name: isPlace ? null : p.school,
 
-      gender: isPlace ? null : p.sex || null,
-      authority: isPlace ? null : p.authority || null,
-      stage: isPlace ? null : p.stage || null,
+      gender: isPlace ? null : (p.sex || null),
+      authority: isPlace ? null : (p.authority || null),
+      stage: isPlace ? null : (p.stage || null),
 
       vaccinated: Number(p.vaccinated) || 0,
-      refused: isPlace ? 0 : Number(p.refused) || 0,
-      absent:  isPlace ? 0 : Number(p.absent) || 0,
-      not_accounted: isPlace ? 0 : Number(p.unvaccinated) || 0,
-      school_total:  isPlace ? 0 : Number(p.schoolTotal) || 0,
+      refused: isPlace ? 0 : (Number(p.refused) || 0),
+      absent:  isPlace ? 0 : (Number(p.absent) || 0),
+      not_accounted: isPlace ? 0 : (Number(p.unvaccinated) || 0),
+      school_total:  isPlace ? 0 : (Number(p.schoolTotal) || 0),
     };
 
     log("submitDailyEntry payload ->", input);
     const res = await submitDailyEntry(input);
-
-    if (res && typeof res === "object" && ("error" in res || "data" in res)) {
-      if (res.error) {
-        const message = res.error.message || res.error || "فشل حفظ السجل";
-        throw new Error(message);
-      }
-      return res.data ?? res;
-    }
-    return res;
+    if (res?.error) throw new Error(res.error.message || "فشل حفظ السجل");
+    return res.data ?? res;
   }
 
   async function confirmSave() {
@@ -347,36 +340,6 @@ export default function UserForm({
           <div className="hpv-section-title">
             <span className="dot" />
             <span>بيانات الإدخال</span>
-          </div>
-          <div className="ml-auto flex items-center gap-2">
-            <Badge
-              tone={
-                status.type === "ok"
-                  ? "ok"
-                  : status.type === "error"
-                  ? "error"
-                  : "brand"
-              }
-            >
-              {status.type === "ok"
-                ? "تم الحفظ"
-                : status.type === "error"
-                ? status.msg || "فشل حفظ السجل"
-                : "جاهز للإدخال"}
-            </Badge>
-            <div
-              className="w-36 h-2 rounded-full bg-gray-200 overflow-hidden"
-              title={`اكتمال ${completeness}%`}
-            >
-              <div
-                className="h-full"
-                style={{
-                  width: `${completeness}%`,
-                  background:
-                    "linear-gradient(90deg,var(--brand),var(--brand-dark))",
-                }}
-              />
-            </div>
           </div>
         </div>
       </Card>
@@ -419,48 +382,26 @@ export default function UserForm({
             <div className="grid md:grid-cols-2 gap-4">
               <div className="flex flex-col">
                 <label className="hpv-label">المنشأة الصحية</label>
-                <input
-                  value={facility}
-                  disabled
-                  className="hpv-input bg-gray-100"
-                />
-                <span className="hpv-help mt-1">
-                  يتم تحديدها تلقائيًا حسب صلاحياتك.
-                </span>
+                <input value={facility} disabled className="hpv-input bg-gray-100" />
+                <span className="hpv-help mt-1">يتم تحديدها تلقائيًا حسب صلاحياتك.</span>
               </div>
 
               <div className="flex flex-col">
                 <label className="hpv-label">اسم المركز الصحي</label>
-                <select
-                  value={center}
-                  onChange={(e) => setCenter(e.target.value)}
-                  className="hpv-select"
-                >
-                  {centers.length === 0 && (
-                    <option value="">— لا توجد مراكز —</option>
-                  )}
+                <select value={center} onChange={(e) => setCenter(e.target.value)} className="hpv-select">
+                  {centers.length === 0 && <option value="">— لا توجد مراكز —</option>}
                   {centers.map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
+                    <option key={c} value={c}>{c}</option>
                   ))}
                 </select>
               </div>
 
               <div className="flex flex-col md:col-span-2">
                 <label className="hpv-label">اسم المدرسة</label>
-                <select
-                  value={school}
-                  onChange={(e) => setSchool(e.target.value)}
-                  className="hpv-select"
-                >
-                  {schools.length === 0 && (
-                    <option value="">— لا توجد مدارس لهذا المركز —</option>
-                  )}
+                <select value={school} onChange={(e) => setSchool(e.target.value)} className="hpv-select">
+                  {schools.length === 0 && <option value="">— لا توجد مدارس لهذا المركز —</option>}
                   {schools.map((s) => (
-                    <option key={s} value={s}>
-                      {s}
-                    </option>
+                    <option key={s} value={s}>{s}</option>
                   ))}
                 </select>
               </div>
@@ -472,35 +413,19 @@ export default function UserForm({
             <div className="grid md:grid-cols-4 gap-3 text-sm">
               <div className="flex flex-col">
                 <label className="hpv-label">الجنس</label>
-                <input
-                  disabled
-                  className="hpv-input bg-gray-100"
-                  value={fixed.sex || "غير محدد"}
-                />
+                <input disabled className="hpv-input bg-gray-100" value={fixed.sex || "غير محدد"} />
               </div>
               <div className="flex flex-col">
                 <label className="hpv-label">السلطة</label>
-                <input
-                  disabled
-                  className="hpv-input bg-gray-100"
-                  value={fixed.authority || "غير محدد"}
-                />
+                <input disabled className="hpv-input bg-gray-100" value={fixed.authority || "غير محدد"} />
               </div>
               <div className="flex flex-col">
                 <label className="hpv-label">المرحلة</label>
-                <input
-                  disabled
-                  className="hpv-input bg-gray-100"
-                  value={fixed.stage || "غير محدد"}
-                />
+                <input disabled className="hpv-input bg-gray-100" value={fixed.stage || "غير محدد"} />
               </div>
               <div className="flex flex-col">
                 <label className="hpv-label">إجمالي المدرسة</label>
-                <input
-                  disabled
-                  className="hpv-input bg-gray-100"
-                  value={fixed.schoolTotal || 0}
-                />
+                <input disabled className="hpv-input bg-gray-100" value={fixed.schoolTotal || 0} />
               </div>
             </div>
           </Card>
@@ -510,44 +435,19 @@ export default function UserForm({
             <div className="grid md:grid-cols-4 gap-4">
               <div className="flex flex-col">
                 <label className="hpv-label">عدد المطعّمين</label>
-                <input
-                  type="number"
-                  min="0"
-                  value={vaccinated}
-                  onChange={(e) => setVaccinated(e.target.value)}
-                  className="hpv-input"
-                  inputMode="numeric"
-                />
+                <input type="number" min="0" value={vaccinated} onChange={(e) => setVaccinated(e.target.value)} className="hpv-input" inputMode="numeric" />
               </div>
               <div className="flex flex-col">
                 <label className="hpv-label">عدد الرفض</label>
-                <input
-                  type="number"
-                  min="0"
-                  value={refused}
-                  onChange={(e) => setRefused(e.target.value)}
-                  className="hpv-input"
-                  inputMode="numeric"
-                />
+                <input type="number" min="0" value={refused} onChange={(e) => setRefused(e.target.value)} className="hpv-input" inputMode="numeric" />
               </div>
               <div className="flex flex-col">
                 <label className="hpv-label">عدد الغياب</label>
-                <input
-                  type="number"
-                  min="0"
-                  value={absent}
-                  onChange={(e) => setAbsent(e.target.value)}
-                  className="hpv-input"
-                  inputMode="numeric"
-                />
+                <input type="number" min="0" value={absent} onChange={(e) => setAbsent(e.target.value)} className="hpv-input" inputMode="numeric" />
               </div>
               <div className="flex flex-col">
                 <label className="hpv-label">غير مطعّم (محسوب)</label>
-                <input
-                  value={unvaccinated}
-                  disabled
-                  className="hpv-input bg-gray-100"
-                />
+                <input value={unvaccinated} disabled className="hpv-input bg-gray-100" />
               </div>
             </div>
             <div className="mt-3">
@@ -564,32 +464,20 @@ export default function UserForm({
             <div className="grid md:grid-cols-2 gap-4">
               <div className="flex flex-col">
                 <label className="hpv-label">المنشأة الصحية</label>
-                <input
-                  value={facility || "—"}
-                  disabled
-                  className="hpv-input bg-gray-100"
-                />
-                <span className="hpv-help mt-1">
-                  سيتم حفظ الإدخال كموقع عام (ليس مدرسة).
-                </span>
+                <input value={facility || "—"} disabled className="hpv-input bg-gray-100" />
+                <span className="hpv-help mt-1">سيتم حفظ الإدخال كموقع عام (ليس مدرسة).</span>
               </div>
 
               <div className="flex flex-col">
                 <label className="hpv-label">المكان</label>
-                <select
-                  value={place}
-                  onChange={(e) => setPlace(e.target.value)}
-                  className="hpv-select"
-                >
+                <select value={place} onChange={(e) => setPlace(e.target.value)} className="hpv-select">
                   <option value="">— اختر المكان —</option>
                   {PLACE_OPTIONS.map((p) => (
-                    <option key={p} value={p}>
-                      {p}
-                    </option>
+                    <option key={p} value={p}>{p}</option>
                   ))}
                 </select>
                 <span className="hpv-help mt-1">
-                  سيُحفظ هذا الخيار في حقل <b>place_category</b> بقاعدة البيانات.
+                  سيُحفظ هذا الخيار في حقل <b>place_category</b> في قاعدة البيانات.
                 </span>
               </div>
             </div>
@@ -599,14 +487,7 @@ export default function UserForm({
             <div className="grid md:grid-cols-3 gap-4">
               <div className="flex flex-col">
                 <label className="hpv-label">عدد المطعّمين</label>
-                <input
-                  type="number"
-                  min="0"
-                  value={vaccinated}
-                  onChange={(e) => setVaccinated(e.target.value)}
-                  className="hpv-input"
-                  inputMode="numeric"
-                />
+                <input type="number" min="0" value={vaccinated} onChange={(e) => setVaccinated(e.target.value)} className="hpv-input" inputMode="numeric" />
               </div>
 
               <div className="flex flex-col">
@@ -631,12 +512,8 @@ export default function UserForm({
         <button type="submit" className="hpv-btn-primary" disabled={isSaving}>
           مراجعة
         </button>
-        {status.type === "ok" && (
-          <span className="text-green-600 text-sm">{status.msg}</span>
-        )}
-        {status.type === "error" && (
-          <span className="text-red-600 text-sm">{status.msg}</span>
-        )}
+        {status.type === "ok" && <span className="text-green-600 text-sm">{status.msg}</span>}
+        {status.type === "error" && <span className="text-red-600 text-sm">{status.msg}</span>}
         {isSaving && <span className="text-gray-500 text-sm">جارٍ الحفظ…</span>}
       </div>
 
@@ -647,20 +524,10 @@ export default function UserForm({
         title="تأكيد الإرسال"
         actions={
           <>
-            <button
-              onClick={confirmSave}
-              type="button"
-              className="hpv-btn-primary"
-              disabled={isSaving}
-            >
+            <button onClick={confirmSave} type="button" className="hpv-btn-primary" disabled={isSaving}>
               إرسال
             </button>
-            <button
-              onClick={() => setPreview(null)}
-              type="button"
-              className="hpv-btn-ghost"
-              disabled={isSaving}
-            >
+            <button onClick={() => setPreview(null)} type="button" className="hpv-btn-ghost" disabled={isSaving}>
               تعديل
             </button>
           </>
