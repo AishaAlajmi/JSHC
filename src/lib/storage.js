@@ -1,48 +1,42 @@
-// File: src/lib/storage.js
+// src/lib/storage.js
 import { makeSupabase } from "./supabaseClient";
 
-export const UPSERT_KEYS = {
-  SCHOOL: "created_by,clinic_name,school_name,entry_date",
-  PLACE:  "created_by,facility,place_category,entry_date",
-};
+const today = () => new Date().toISOString().slice(0, 10);
 
+// Insert one row into daily_entries (works for school and place)
 export async function submitDailyEntry(input) {
   const supabase = makeSupabase();
   if (!supabase) return { error: { message: "Supabase env not configured" } };
 
-  const isPlace = input.location_type === "place";
-  const table = isPlace ? "place_entries" : "daily_entries";
-  const onConflict = isPlace ? UPSERT_KEYS.PLACE : UPSERT_KEYS.SCHOOL;
+  const isPlace = (input.location_type || "").toLowerCase() === "place";
 
-  const today = new Date().toISOString().slice(0, 10);
+  const payload = {
+    entry_date: input.entry_date || input.date || today(),
+    facility: input.facility ?? null,
 
-  const payload = isPlace
-    ? {
-        entry_date: input.entry_date || today,
-        facility: input.facility ?? null,
-        place_category: input.place_category ?? null,
-        vaccinated: Number(input.vaccinated || 0),
-        created_by: input.created_by || input.email || null,
-      }
-    : {
-        entry_date: input.entry_date || today,
-        facility: input.facility ?? null,
-        clinic_name: input.clinic_name ?? null,
-        school_name: input.school_name ?? null,
-        gender: input.gender ?? null,
-        authority: input.authority ?? null,
-        stage: input.stage ?? null,
-        vaccinated: Number(input.vaccinated || 0),
-        refused: Number(input.refused || 0),
-        absent: Number(input.absent || 0),
-        not_accounted: Number(input.not_accounted || 0),
-        school_total: Number(input.school_total || 0),
-        created_by: input.created_by || input.email || null,
-      };
+    // school fields
+    clinic_name: isPlace ? null : (input.clinic_name ?? null),
+    school_name: isPlace ? null : (input.school_name ?? null),
+    gender:      isPlace ? null : (input.gender ?? null),
+    authority:   isPlace ? null : (input.authority ?? null),
+    stage:       isPlace ? null : (input.stage ?? null),
+    vaccinated:        Number(input.vaccinated || 0),
+    refused:     isPlace ? 0 : Number(input.refused || 0),
+    absent:      isPlace ? 0 : Number(input.absent || 0),
+    not_accounted: isPlace ? 0 : Number(input.not_accounted || 0),
+    school_total:  isPlace ? 0 : Number(input.school_total || 0),
 
+    // place fields
+    location_type: isPlace ? "place" : "school",
+    place_category: isPlace ? (input.place_category || input.place || null) : null,
+
+    created_by: input.created_by || input.email || null,
+  };
+
+  // Simple INSERT (no upsert) – works even if you haven't created UNIQUE indexes yet
   const { data, error } = await supabase
-    .from(table)
-    .upsert(payload, { onConflict, ignoreDuplicates: false })
+    .from("daily_entries")
+    .insert([payload])
     .select()
     .single();
 
@@ -54,15 +48,15 @@ export async function getEntries({ from, to, facility, locationType } = {}) {
   const supabase = makeSupabase();
   if (!supabase) return { rows: [] };
 
-  // Use the unified view if you created it; otherwise switch to daily_entries
-  let q = supabase.from("combined_entries").select("*");
+  let q = supabase.from("daily_entries").select("*");
 
-  if (from) q = q.gte("entry_date", from);
-  if (to) q = q.lte("entry_date", to);
-  if (facility) q = q.eq("facility", facility);
-  if (locationType) q = q.eq("location_type", locationType);
+  if (from)        q = q.gte("entry_date", from);
+  if (to)          q = q.lte("entry_date", to);
+  if (facility)    q = q.eq("facility", facility);
+  if (locationType)q = q.eq("location_type", locationType);
 
-  q = q.order("entry_date", { ascending: false }).order("created_at", { ascending: false });
+  q = q.order("entry_date", { ascending: false })
+       .order("created_at", { ascending: false });
 
   const { data, error } = await q;
   if (error) return { error };
