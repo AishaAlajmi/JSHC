@@ -2,7 +2,7 @@
 import { createClient } from '@supabase/supabase-js';
 
 // ---- Supabase client (server-only key) ----
-const supabaseUrl = process.env.VITE_SUPABASE_URL;
+const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 const supabase = (supabaseUrl && supabaseServiceKey)
