@@ -477,7 +477,6 @@ export default function UserForm({
                   ))}
                 </select>
                 <span className="hpv-help mt-1">
-                  سيُحفظ هذا الخيار في حقل <b>place_category</b> في قاعدة البيانات.
                 </span>
               </div>
             </div>
