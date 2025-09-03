@@ -3,7 +3,6 @@
 // =============================================
 import React from "react";
 import { createRoot } from "react-dom/client";
-import HPVDemo from "./HPVDemo.jsx";
+import AppRouter from "./router/AppRouter.jsx";
 
-
-createRoot(document.getElementById("root")).render(<HPVDemo />);
+createRoot(document.getElementById("root")).render(<AppRouter />);

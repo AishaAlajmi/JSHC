@@ -1,13 +1,17 @@
-// src/HPVDemo.jsx
+// =============================================
+// filepath: src/HPVDemo.jsx
+// =============================================
 import React, { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { META, FACILITIES } from "./data/meta";
 import Dashboard from "./components/Dashboard";
 import UserForm from "./components/common/UserForm";
 import MyRecordsSmart from "./components/common/MyRecordsSmart";
 import exportToExcel from "./utils/exportToExcel";
 import { submitDailyEntry, getEntries } from "./lib/storage";
-import { makeSupabase } from "./lib/supabaseClient"; // <-- add this
+import { supabase } from "./lib/supabaseClient";
 import LoginPage from "./components/LoginPage";
+import AssignedSchoolProgress from "./components/AssignedSchoolProgress";
 
 const DEBUG = true;
 const log = (...args) => DEBUG && console.log("[HPVDemo]", ...args);
@@ -37,7 +41,9 @@ function safeParseJSON(str, fallback) {
   }
 }
 function safeSetItem(k, v, fb) {
-  try { localStorage.setItem(k, JSON.stringify(v ?? fb)); } catch {}
+  try {
+    localStorage.setItem(k, JSON.stringify(v ?? fb));
+  } catch {}
 }
 
 function seedUsers() {
@@ -52,9 +58,15 @@ function seedUsers() {
   safeSetItem(LS_USERS, seeded, {});
   return seeded;
 }
-function getUsers() { return safeParseJSON(localStorage.getItem(LS_USERS), null) || seedUsers(); }
-function getSchoolInfo() { return safeParseJSON(localStorage.getItem(LS_SCHOOL_INFO), {}); }
-function setSchoolInfo(map) { safeSetItem(LS_SCHOOL_INFO, map, {}); }
+function getUsers() {
+  return safeParseJSON(localStorage.getItem(LS_USERS), null) || seedUsers();
+}
+function getSchoolInfo() {
+  return safeParseJSON(localStorage.getItem(LS_SCHOOL_INFO), {});
+}
+function setSchoolInfo(map) {
+  safeSetItem(LS_SCHOOL_INFO, map, {});
+}
 
 // Small UI wrapper
 function Card({ title, children, actions }) {
@@ -79,7 +91,10 @@ function AdminManageUsers() {
   function addOrUpdate() {
     const key = email.trim().toLowerCase();
     if (!key) return;
-    const next = { ...users, [key]: { role, facility: role === "admin" ? null : facility } };
+    const next = {
+      ...users,
+      [key]: { role, facility: role === "admin" ? null : facility },
+    };
     safeSetItem(LS_USERS, next, {});
     setUsersState(next);
     setEmail("");
@@ -94,7 +109,11 @@ function AdminManageUsers() {
   return (
     <Card
       title="صلاحيات المستخدمين"
-      actions={<button className="btn btn-primary" onClick={addOrUpdate}>حفظ</button>}
+      actions={
+        <button className="btn btn-primary" onClick={addOrUpdate}>
+          حفظ
+        </button>
+      }
     >
       <div className="grid md:grid-cols-4 gap-2">
         <input
@@ -103,7 +122,11 @@ function AdminManageUsers() {
           value={email}
           onChange={(e) => setEmail(e.target.value)}
         />
-        <select className="border rounded-xl px-3 py-2" value={role} onChange={(e) => setRole(e.target.value)}>
+        <select
+          className="border rounded-xl px-3 py-2"
+          value={role}
+          onChange={(e) => setRole(e.target.value)}
+        >
           <option value="user">User</option>
           <option value="admin">Admin</option>
         </select>
@@ -113,7 +136,11 @@ function AdminManageUsers() {
           onChange={(e) => setFacility(e.target.value)}
           disabled={role === "admin"}
         >
-          {FACILITIES.map((f) => <option key={f} value={f}>{f}</option>)}
+          {FACILITIES.map((f) => (
+            <option key={f} value={f}>
+              {f}
+            </option>
+          ))}
         </select>
       </div>
 
@@ -134,7 +161,9 @@ function AdminManageUsers() {
                 <td className="p-2">{v.role}</td>
                 <td className="p-2">{v.role === "admin" ? "-" : v.facility || ""}</td>
                 <td className="p-2">
-                  <button className="btn btn-ghost" onClick={() => removeKey(k)}>حذف</button>
+                  <button className="btn btn-ghost" onClick={() => removeKey(k)}>
+                    حذف
+                  </button>
                 </td>
               </tr>
             ))}
@@ -147,11 +176,10 @@ function AdminManageUsers() {
 
 // ================= App =================
 export default function HPVDemo() {
-  const [user, setUser] = useState(null); // {email, role, facility}
+  const [user, setUser] = useState(null);
   const [responses, setRows] = useState([]);
   const [schoolInfo, setSchoolInfoState] = useState(getSchoolInfo());
 
-  // Safety: clean up any old broken values
   useEffect(() => {
     ["hpv_responses_demo_v4"].forEach((k) => {
       const v = localStorage.getItem(k);
@@ -159,67 +187,70 @@ export default function HPVDemo() {
     });
   }, []);
 
-  function signOut() { setUser(null); setRows([]); }
+  function signOut() {
+    setUser(null);
+    setRows([]);
+  }
 
-  // map DB → UI row (place-aware)
+  // DB → UI
+  // ✅ Always pass clinic_name & school_name through; center = clinic_name (even if "اخرى")
   function mapEntryToLocal(e) {
-    const isPlace = (e.location_type || "").toLowerCase() === "place";
     return {
       date: (e.entry_date || e.created_at || "").slice(0, 10),
       email: e.created_by || "",
       facility: e.facility || "",
-      center: isPlace ? "" : (e.clinic_name || ""),
-      school: isPlace ? (e.place_category || "") : (e.school_name || ""),
+
+      clinic_name: e.clinic_name || "",
+      school_name: e.school_name || "",
+
+      // legacy-friendly aliases used elsewhere in UI
+      center: e.clinic_name || "",
+      school: e.school_name || "",
+
       vaccinated: e.vaccinated ?? 0,
-      refused: isPlace ? 0 : (e.refused ?? 0),
-      absent:  isPlace ? 0 : (e.absent ?? 0),
-      unvaccinated: isPlace ? 0 : (e.not_accounted ?? 0),
-      schoolTotal: isPlace ? 0 : (e.school_total ?? e.schoolTotal ?? 0),
+      refused: e.refused ?? 0,
+      absent: e.absent ?? 0,
+      unvaccinated: e.not_accounted ?? 0,
+      schoolTotal: e.school_total ?? e.schoolTotal ?? 0,
       ts: e.ts || 0,
     };
   }
 
-  // Fallback loader from Supabase (client-side)
+  // Supabase fallback
   async function loadFromSupabaseFallback(activeUser) {
-    const supabase = makeSupabase();
-    if (!supabase) {
+    const sb = supabase;
+    if (!sb) {
       log("Supabase env not found; cannot fallback.");
       return [];
     }
-
-    const [{ data: daily, error: e1 }] = await Promise.all([
-      supabase.from("daily_entries").select("*"),
-    ]);
+    const { data: daily, error: e1 } = await sb.from("daily_entries").select("*");
     if (e1) {
       console.error("Supabase fallback error:", e1);
       return [];
     }
-
     let rows = (daily || []).map(mapEntryToLocal);
-
     if (activeUser?.role === "user" && activeUser?.email) {
-      rows = rows.filter((r) => (r.email || "").toLowerCase() === activeUser.email.toLowerCase());
+      rows = rows.filter(
+        (r) => (r.email || "").toLowerCase() === activeUser.email.toLowerCase()
+      );
     }
     return rows;
   }
 
-  // Load from API on login, else fallback to Supabase
+  // Load
   useEffect(() => {
     if (!user) return;
-
     (async () => {
       try {
         const params = user.role === "user" ? { created_by: user.email } : {};
         const { rows, error } = await getEntries(params);
         if (error) throw error;
-
         const mapped = (rows || []).map(mapEntryToLocal);
         if (mapped.length > 0) {
           setRows(mapped);
-          log("Loaded entries via /lib/storage getEntries:", mapped.length);
+          log("Loaded entries via getEntries:", mapped.length);
           return;
         }
-
         const fb = await loadFromSupabaseFallback(user);
         setRows(fb);
         log("Loaded entries via Supabase fallback:", fb.length);
@@ -227,12 +258,11 @@ export default function HPVDemo() {
         console.warn("Primary load failed; trying Supabase fallback…", e);
         const fb = await loadFromSupabaseFallback(user);
         setRows(fb);
-        log("Loaded entries via Supabase fallback:", fb.length);
       }
     })();
   }, [user?.email, user?.role]);
 
-  // Local upsert helper (email + center + school)
+  // upsert locally by (email + center + school)
   function upsertLocalRow(list, row) {
     const idx = list.findIndex(
       (r) =>
@@ -248,7 +278,7 @@ export default function HPVDemo() {
     return [...list, row];
   }
 
-  // Save to API, then upsert locally (supports school & place)
+  // Save entry
   async function addRow(previewRow) {
     const isPlace = previewRow.mode === "place";
     const payload = {
@@ -256,34 +286,44 @@ export default function HPVDemo() {
       facility: previewRow.facility,
       created_by: previewRow.email || (user?.email ?? ""),
 
-      location_type: isPlace ? "place" : "school",
-      place_category: isPlace ? previewRow.place : null,
+      // mapping you requested
+      clinic_name: isPlace ? "اخرى" : previewRow.center,
+      school_name: isPlace ? previewRow.place : previewRow.school,
 
-      clinic_name: isPlace ? null : previewRow.center,
-      school_name: isPlace ? null : previewRow.school,
-
-      gender: isPlace ? null : (previewRow.sex || null),
-      authority: isPlace ? null : (previewRow.authority || null),
-      stage: isPlace ? null : (previewRow.stage || null),
+      // meta for schools only
+      gender: isPlace ? null : previewRow.sex || null,
+      authority: isPlace ? null : previewRow.authority || null,
+      stage: isPlace ? null : previewRow.stage || null,
 
       vaccinated: Number(previewRow.vaccinated) || 0,
       refused: isPlace ? 0 : Number(previewRow.refused || 0),
-      absent:  isPlace ? 0 : Number(previewRow.absent || 0),
+      absent: isPlace ? 0 : Number(previewRow.absent || 0),
       not_accounted: isPlace ? 0 : Number(previewRow.unvaccinated || 0),
-      school_total:  isPlace ? 0 : Number(previewRow.schoolTotal || 0),
+      school_total: isPlace ? 0 : Number(previewRow.schoolTotal || 0),
     };
 
     const { data, error } = await submitDailyEntry(payload);
     if (error) throw error;
 
+    // ✅ reflect saved row locally with clinic_name kept as-is
+    const clinicName = isPlace ? "اخرى" : previewRow.center;
+    const schoolName = isPlace ? previewRow.place : previewRow.school;
+
     const localRow = {
       ...previewRow,
       email: user?.email || previewRow.email || "",
-      date: previewRow.date || (data?.entry_date || data?.created_at || "").slice(0, 10),
-      center: isPlace ? "" : previewRow.center,
-      school: isPlace ? previewRow.place : previewRow.school,
+      date:
+        previewRow.date ||
+        (data?.entry_date || data?.created_at || "").slice(0, 10),
+
+      clinic_name: clinicName,
+      school_name: schoolName,
+
+      center: clinicName, // keep alias in UI
+      school: schoolName,
+
       refused: isPlace ? 0 : previewRow.refused,
-      absent:  isPlace ? 0 : previewRow.absent,
+      absent: isPlace ? 0 : previewRow.absent,
       unvaccinated: isPlace ? 0 : previewRow.unvaccinated,
       schoolTotal: isPlace ? 0 : previewRow.schoolTotal,
     };
@@ -291,24 +331,50 @@ export default function HPVDemo() {
     return data;
   }
 
-  function onExport(rows) { exportToExcel(rows); }
-  function onUpdateSchoolInfo(map) { setSchoolInfoState(map); setSchoolInfo(map); }
+  function onExport(rows) {
+    exportToExcel(rows);
+  }
+  function onUpdateSchoolInfo(map) {
+    setSchoolInfoState(map);
+    setSchoolInfo(map);
+  }
 
   return (
     <div dir="rtl" className="min-h-screen bg-[#F6F9FF]">
       <BrandStyles />
-
       <header className="sticky top-0 z-10 text-white brand-gradient">
         <div className="max-w-6xl mx-auto px-4 py-3 flex items-center gap-3">
-          <div className="font-bold">الحملة الوطنية للتطعيم باللقاح الثلاثي الفيروسي </div>
+          <div className="font-bold">
+            الحملة الوطنية للتطعيم باللقاح الثلاثي الفيروسي{" "}
+          </div>
+
+          {/* Right side controls */}
           <div className="ml-auto flex items-center gap-3">
             {user ? (
               <>
                 <div className="text-sm text-right">
                   <div className="font-semibold">{user.email}</div>
-                  <div className="text-gray-200">{user.role === "admin" ? "مشرف" : user.facility}</div>
+                  <div className="text-gray-200">
+                    {user.role === "admin" ? "مشرف" : user.facility}
+                  </div>
                 </div>
-                <button onClick={signOut} className="px-3 py-1 border rounded-xl bg-white/10 text-white">تسجيل خروج</button>
+
+                {/* Admin-only: link to Power BI page */}
+                {user.role === "admin" && (
+                  <Link
+                    to="/pbi"
+                    className="px-3 py-1 border rounded-xl bg-white/10 text-white"
+                  >
+                    لوحة Power BI
+                  </Link>
+                )}
+
+                <button
+                  onClick={signOut}
+                  className="px-3 py-1 border rounded-xl bg-white/10 text-white"
+                >
+                  تسجيل خروج
+                </button>
               </>
             ) : null}
           </div>
@@ -319,9 +385,12 @@ export default function HPVDemo() {
         {!user && (
           <LoginPage
             onLogin={(u) => {
-              const email = (typeof u === "string" ? u : u?.email || "").toLowerCase();
+              const email = (
+                typeof u === "string" ? u : u?.email || ""
+              ).toLowerCase();
               const info = getUsers()[email];
-              if (info) setUser({ email, role: info.role, facility: info.facility });
+              if (info)
+                setUser({ email, role: info.role, facility: info.facility });
               else if (typeof u === "object" && u?.email && u?.role) setUser(u);
               else setUser(null);
             }}
@@ -341,7 +410,21 @@ export default function HPVDemo() {
               />
             </Card>
 
-            <MyRecordsSmart email={user.email} rows={responses} onExport={onExport} />
+            <div className="grid gap-4">
+              {/* Progress for assigned schools */}
+              <AssignedSchoolProgress
+                META={META}
+                facility={user.facility}
+                rows={responses}
+                email={user.email}
+              />
+
+              <MyRecordsSmart
+                email={user.email}
+                rows={responses}
+                onExport={onExport}
+              />
+            </div>
           </div>
         )}
 

@@ -1,18 +1,12 @@
-// File: src/components/common/UserForm.jsx
 import React, { useEffect, useState, useMemo } from "react";
-import { submitDailyEntry, UPSERT_MODES } from "../../lib/storage";
-import { getSchoolStatic } from "../../data/meta"; // fixed info
+import { submitDailyEntry, fetchSchoolDayTotals } from "../../lib/storage";
+import { getSchoolStatic } from "../../data/meta";
 
 const DEBUG = true;
 const log = (...args) => DEBUG && console.log("[UserForm]", ...args);
 
-function todayStr() {
-  return new Date().toISOString().slice(0, 10);
-}
-function numberOrNull(v) {
-  const n = Number(v);
-  return Number.isFinite(n) && n >= 0 ? n : null;
-}
+function todayStr() { return new Date().toISOString().slice(0, 10); }
+function numberOrNull(v) { const n = Number(v); return Number.isFinite(n) && n >= 0 ? n : null; }
 
 /* ---------- Reusable UI ---------- */
 function Card({ title, subtitle, children, className = "" }) {
@@ -28,53 +22,28 @@ function Card({ title, subtitle, children, className = "" }) {
     </div>
   );
 }
-
 function Badge({ children, tone = "brand" }) {
   const toneClass =
-    tone === "ok"
-      ? "bg-green-50 text-green-700 border-green-200"
-      : tone === "warn"
-      ? "bg-yellow-50 text-yellow-700 border-yellow-200"
-      : tone === "error"
-      ? "bg-red-50 text-red-700 border-red-200"
-      : "bg-sky-50 text-sky-700 border-sky-200";
-  return (
-    <span
-      className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs border ${toneClass}`}
-    >
-      {children}
-    </span>
-  );
+    tone === "ok" ? "bg-green-50 text-green-700 border-green-200" :
+    tone === "warn" ? "bg-yellow-50 text-yellow-700 border-yellow-200" :
+    tone === "error" ? "bg-red-50 text-red-700 border-red-200" :
+    "bg-sky-50 text-sky-700 border-sky-200";
+  return <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs border ${toneClass}`}>{children}</span>;
 }
-
 function Modal({ open, title, children, onClose, actions }) {
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
       <div className="relative bg-white rounded-2xl shadow-xl w-[95%] md:w-[760px] max-h-[85vh] overflow-auto">
-        <div
-          className="h-1.5 w-full rounded-t-2xl"
-          style={{
-            background: "linear-gradient(90deg,var(--brand),var(--brand-dark))",
-          }}
-        />
+        <div className="h-1.5 w-full rounded-t-2xl" style={{background:"linear-gradient(90deg,var(--brand),var(--brand-dark))"}}/>
         <div className="p-4">
           <div className="flex items-center gap-2 mb-3">
-            <div
-              className="font-extrabold text-lg"
-              style={{ color: "var(--brand-dark)" }}
-            >
-              {title}
-            </div>
-            <button className="ml-auto btn btn-ghost" onClick={onClose}>
-              إغلاق
-            </button>
+            <div className="font-extrabold text-lg" style={{ color: "var(--brand-dark)" }}>{title}</div>
+            <button className="ml-auto btn btn-ghost" onClick={onClose}>إغلاق</button>
           </div>
           {children}
-          {actions && (
-            <div className="mt-4 flex gap-2 justify-end">{actions}</div>
-          )}
+          {actions && <div className="mt-4 flex gap-2 justify-end">{actions}</div>}
         </div>
       </div>
     </div>
@@ -82,40 +51,30 @@ function Modal({ open, title, children, onClose, actions }) {
 }
 
 /* ---------- Main Form ---------- */
-export default function UserForm({
-  email,
-  facility,
-  meta,
-  onSubmit,
-  schoolInfo,
-}) {
-  // === NEW: Mode selector ===
-  // 'school' (default if centers exist) OR 'place'
+export default function UserForm({ email, facility, meta, onSubmit, schoolInfo }) {
   const centers = meta?.centersByFacility?.[facility] || [];
   const [mode, setMode] = useState(centers.length > 0 ? "school" : "place");
 
-  // --- School mode state ---
+  // School state
   const [center, setCenter] = useState(centers[0] || "");
-  const schools = meta
-    ? meta.schoolsByCenter?.[facility + "::" + center] || []
-    : [];
+  const schools = meta ? meta.schoolsByCenter?.[facility + "::" + center] || [] : [];
   const [school, setSchool] = useState("");
   const [vaccinated, setVaccinated] = useState("");
   const [refused, setRefused] = useState("");
   const [absent, setAbsent] = useState("");
+  const [todaySoFar, setTodaySoFar] = useState({ vaccinated: 0, refused: 0, absent: 0, loading: false, error: "" });
 
-  // --- Place mode state ---
+  // Place state
   const PLACE_OPTIONS = ["سجون", "دار الأيتام", "مولات", "أحياء عشوائية"];
   const [place, setPlace] = useState("");
 
-  // shared UI state
+  // Shared UI
   const [status, setStatus] = useState({ type: "idle", msg: "" });
   const [preview, setPreview] = useState(null);
 
-  // Local component styling (Arabic-friendly)
-  const brandStyles = useMemo(
-    () => (
-      <style>{`
+  // Arabic UI styles
+  const brandStyles = useMemo(() => (
+    <style>{`
       :root{--brand:#1691D0;--brand-dark:#15508A;--brand-alt:#3AC0C3}
       @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&display=swap');
       .hpv-form, .hpv-form * { font-family: "Tajawal","Noto Kufi Arabic","Cairo",system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif !important; }
@@ -131,73 +90,76 @@ export default function UserForm({
       .hpv-section-title { display:flex; align-items:center; gap:.5rem; font-weight:800; color:var(--brand-dark); }
       .hpv-section-title .dot { width:.6rem; height:.6rem; border-radius:999px; background:var(--brand); display:inline-block; }
     `}</style>
-    ),
-    []
-  );
+  ), []);
 
-  // keep center valid for current facility (school mode only)
+  // keep center valid
   useEffect(() => {
     if (mode !== "school") return;
     setCenter((curr) => (centers.includes(curr) ? curr : centers[0] || ""));
-  }, [facility, meta, mode]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [facility, meta, mode]); // eslint-disable-line
 
-  // default first school whenever center changes (school mode only)
+  // default school on center change
   useEffect(() => {
     if (mode !== "school") return;
-    const s =
-      (meta?.schoolsByCenter?.[facility + "::" + center] || [""])[0] || "";
+    const s = (meta?.schoolsByCenter?.[facility + "::" + center] || [""])[0] || "";
     setSchool(s);
   }, [center, facility, meta, mode]);
 
-  // when switching mode, clear statuses and numbers
+  // clear fields on mode switch
   useEffect(() => {
     setStatus({ type: "idle", msg: "" });
     setPreview(null);
-    setVaccinated("");
-    setRefused("");
-    setAbsent("");
-    setPlace("");
+    setVaccinated(""); setRefused(""); setAbsent(""); setPlace("");
   }, [mode]);
 
-  // Auto-fill “الحقول الثابتة” from meta; fallback to schoolInfo (if provided)
-  const fixedMeta = useMemo(
-    () => (mode === "school" ? getSchoolStatic(facility, center, school) : {}),
-    [facility, center, school, mode]
-  );
-
+  // fixed meta
+  const fixedMeta = useMemo(() => (mode === "school" ? getSchoolStatic(facility, center, school) : {}), [facility, center, school, mode]);
   const fixed = useMemo(() => {
-    if (mode !== "school") {
-      return { sex: "", authority: "", stage: "", schoolTotal: 0 };
-    }
+    if (mode !== "school") return { sex: "", authority: "", stage: "", schoolTotal: 0 };
     const fallback = schoolInfo?.[school] || {};
     return {
       sex: fixedMeta.gender || fallback.sex || "",
       authority: fixedMeta.authority || fallback.authority || "",
       stage: fixedMeta.stage || fallback.stage || "",
-      schoolTotal:
-        (Number.isFinite(fixedMeta.total) ? fixedMeta.total : 0) ||
-        Number(fallback.schoolTotal) ||
-        0,
+      schoolTotal: (Number.isFinite(fixedMeta.total) ? fixedMeta.total : 0) || Number(fallback.schoolTotal) || 0,
     };
   }, [fixedMeta, school, schoolInfo, mode]);
 
-  const unvaccinated =
-    mode === "school"
-      ? (numberOrNull(refused) || 0) + (numberOrNull(absent) || 0)
-      : 0;
+  const unvaccinated = mode === "school" ? (numberOrNull(refused) || 0) + (numberOrNull(absent) || 0) : 0;
 
-  // completeness bar
+  // fetch today's totals
+  useEffect(() => {
+    if (mode !== "school" || !center || !school || !email) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        setTodaySoFar((s) => ({ ...s, loading: true, error: "" }));
+        const { data, error } = await fetchSchoolDayTotals({
+          created_by: email,
+          facility,
+          clinic_name: center,
+          school_name: school,
+          entry_date: todayStr(),
+        });
+        if (cancelled) return;
+        if (error) setTodaySoFar({ vaccinated: 0, refused: 0, absent: 0, loading: false, error: error.message || String(error) });
+        else setTodaySoFar({ ...data, loading: false, error: "" });
+      } catch (err) {
+        if (!cancelled) setTodaySoFar({ vaccinated: 0, refused: 0, absent: 0, loading: false, error: String(err) });
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [mode, center, school, facility, email]);
+
+  // completeness (unchanged)
   const completeness = useMemo(() => {
     if (mode === "place") {
-      let score = 0,
-        total = 2; // place + vaccinated
+      let score = 0, total = 2;
       if (place) score++;
       if (numberOrNull(vaccinated) !== null) score++;
       return Math.round((score / total) * 100);
     }
-    // school mode
-    let score = 0,
-      total = 6;
+    let score = 0, total = 6;
     if (facility) score++;
     if (center) score++;
     if (school) score++;
@@ -217,19 +179,9 @@ export default function UserForm({
         return;
       }
       const data = {
-        mode,
-        date: todayStr(),
-        email,
-        facility,
-        place,
-        vaccinated: v,
-        refused: 0,
-        absent: 0,
-        unvaccinated: 0,
-        sex: null,
-        authority: null,
-        stage: null,
-        schoolTotal: 0,
+        mode, date: todayStr(), email, facility,
+        place, vaccinated: v, refused: 0, absent: 0, unvaccinated: 0,
+        sex: null, authority: null, stage: null, schoolTotal: 0,
       };
       setStatus({ type: "idle", msg: "" });
       setPreview(data);
@@ -237,76 +189,55 @@ export default function UserForm({
       return;
     }
 
-    // mode === 'school'
+    // school
     const v = numberOrNull(vaccinated);
     const r = numberOrNull(refused);
     const a = numberOrNull(absent);
-
     if (v === null || r === null || a === null || !center || !school) {
       setStatus({ type: "error", msg: "تأكد من تعبئة الحقول بشكل صحيح" });
       return;
     }
     const total = Number(fixed.schoolTotal) || 0;
-    if (total && v + r + a > total) {
-      setStatus({
-        type: "error",
-        msg: "مجموع (مطعّم + رفض + غياب) يتجاوز إجمالي المدرسة",
-      });
-      return;
-    }
+    const wouldBeVaccinated = (todaySoFar.vaccinated || 0) + v;
+    const wouldExceed = total > 0 && wouldBeVaccinated > total;
 
     const data = {
-      mode,
-      date: todayStr(),
-      email,
-      facility,
-      center,
-      school,
-      vaccinated: v,
-      refused: r,
-      absent: a,
-      unvaccinated: r + a,
-      sex: fixed.sex,
-      authority: fixed.authority,
-      stage: fixed.stage,
-      schoolTotal: Number(fixed.schoolTotal) || 0,
+      mode, date: todayStr(), email, facility, center, school,
+      vaccinated: v, refused: r, absent: a, unvaccinated: r + a,
+      sex: fixed.sex, authority: fixed.authority, stage: fixed.stage,
+      schoolTotal: total, _warnExceed: wouldExceed, _wouldBeVaccinated: wouldBeVaccinated,
+      _todaySoFar: todaySoFar.vaccinated || 0,
     };
-
     setStatus({ type: "idle", msg: "" });
     setPreview(data);
     log("previewData (school)", data);
   }
 
   async function saveToAPI(p) {
-    // Shared payload columns expected by backend
     const isPlace = p.mode === "place";
     const input = {
+      entry_date: p.date,
       facility: p.facility,
-      clinic_name: isPlace ? "—" : p.center, // invisible center for places
-      school_name: isPlace ? p.place : p.school, // store the place label here
-      gender: isPlace ? null : p.sex || "غير محدد",
+      created_by: email || p.email || null,
+
+      clinic_name: isPlace ? "اخرى" : p.center,
+      school_name: isPlace ? p.place : p.school,
+
+      gender: isPlace ? null : p.sex || null,
       authority: isPlace ? null : p.authority || null,
       stage: isPlace ? null : p.stage || null,
+
       vaccinated: Number(p.vaccinated) || 0,
       refused: isPlace ? 0 : Number(p.refused) || 0,
       absent: isPlace ? 0 : Number(p.absent) || 0,
       not_accounted: isPlace ? 0 : Number(p.unvaccinated) || 0,
       school_total: isPlace ? 0 : Number(p.schoolTotal) || 0,
-      created_by: email || p.email || "",
     };
 
     log("submitDailyEntry payload ->", input);
-    // Upsert by (created_by, clinic_name, school_name)
-    const res = await submitDailyEntry(input, { mode: UPSERT_MODES.PER_PAIR });
-
-    if (res && typeof res === "object" && ("error" in res || "data" in res)) {
-      if (res.error) {
-        const message = res.error.message || res.error || "فشل حفظ السجل";
-        throw new Error(message);
-      }
-      return res.data ?? res;
-    }
-    return res;
+    const res = await submitDailyEntry(input);
+    if (res?.error) throw new Error(res.error.message || "فشل حفظ السجل");
+    return res.data ?? res;
   }
 
   async function confirmSave() {
@@ -316,13 +247,16 @@ export default function UserForm({
       const saver = onSubmit || saveToAPI;
       const result = await saver(preview);
       log("save result ->", result);
-      // reset fields
-      setVaccinated("");
-      setRefused("");
-      setAbsent("");
-      setPlace("");
+      setVaccinated(""); setRefused(""); setAbsent(""); setPlace("");
       setPreview(null);
       setStatus({ type: "ok", msg: "تم الحفظ بنجاح" });
+
+      if (mode === "school" && center && school) {
+        const { data } = await fetchSchoolDayTotals({
+          created_by: email, facility, clinic_name: center, school_name: school, entry_date: todayStr(),
+        });
+        if (data) setTodaySoFar({ ...data, loading: false, error: "" });
+      }
     } catch (e) {
       const raw = e?.message || String(e);
       console.error("Save failed:", e);
@@ -331,263 +265,123 @@ export default function UserForm({
   }
 
   const isSaving = status.type === "saving";
+  const vInput = numberOrNull(vaccinated) || 0;
+  const todayVaccinated = todaySoFar.vaccinated || 0;
+  const projectedVaccinated = todayVaccinated + (mode === "school" ? vInput : 0);
+  const remainingFromTotal = mode === "school" ? Math.max(0, (Number(fixed.schoolTotal) || 0) - projectedVaccinated) : 0;
+  const willExceedTotal = mode === "school" && (Number(fixed.schoolTotal) || 0) > 0 && projectedVaccinated > (Number(fixed.schoolTotal) || 0);
 
   return (
     <form onSubmit={askPreview} className="hpv-form space-y-5">
       {brandStyles}
-
       <Card>
         <div className="flex flex-wrap items-center gap-3">
-          <div className="hpv-section-title">
-            <span className="dot" />
-            <span>بيانات الإدخال</span>
-          </div>
-          <div className="ml-auto flex items-center gap-2">
-            <Badge
-              tone={
-                status.type === "ok"
-                  ? "ok"
-                  : status.type === "error"
-                  ? "error"
-                  : "brand"
-              }
-            >
-              {status.type === "ok"
-                ? "تم الحفظ"
-                : status.type === "error"
-                ? status.msg || "فشل حفظ السجل"
-                : "جاهز للإدخال"}
-            </Badge>
-            <div
-              className="w-36 h-2 rounded-full bg-gray-200 overflow-hidden"
-              title={`اكتمال ${completeness}%`}
-            >
-              <div
-                className="h-full"
-                style={{
-                  width: `${completeness}%`,
-                  background:
-                    "linear-gradient(90deg,var(--brand),var(--brand-dark))",
-                }}
-              />
-            </div>
-          </div>
+          <div className="hpv-section-title"><span className="dot" /><span>بيانات الإدخال</span></div>
         </div>
       </Card>
 
-      {/* === NEW: Mode selection === */}
+      {/* Mode selection */}
       <Card>
         <div className="grid md:grid-cols-3 gap-4">
           <div className="flex flex-col md:col-span-3">
             <label className="hpv-label">نوع الإدخال</label>
             <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={() => setMode("school")}
-                className={`hpv-btn-ghost ${mode === "school" ? "ring-2 ring-sky-300" : ""}`}
-              >
-                مدارس عبر المركز الصحي
-              </button>
-              <button
-                type="button"
-                onClick={() => setMode("place")}
-                className={`hpv-btn-ghost ${mode === "place" ? "ring-2 ring-sky-300" : ""}`}
-              >
-                أماكن أخرى (سجون/مولات/دار الأيتام/أحياء)
-              </button>
+              <button type="button" onClick={() => setMode("school")} className={`hpv-btn-ghost ${mode === "school" ? "ring-2 ring-sky-300" : ""}`}>مدارس عبر المركز الصحي</button>
+              <button type="button" onClick={() => setMode("place")} className={`hpv-btn-ghost ${mode === "place" ? "ring-2 ring-sky-300" : ""}`}>أماكن أخرى (سجون/مولات/دار الأيتام/أحياء)</button>
             </div>
             {mode === "school" && centers.length === 0 && (
-              <p className="hpv-help mt-2 text-red-600">
-                لا توجد مراكز صحية مرتبطة بمنشأتك — يمكنك استخدام وضع "أماكن أخرى".
-              </p>
+              <p className="hpv-help mt-2 text-red-600">لا توجد مراكز صحية مرتبطة بمنشأتك — يمكنك استخدام وضع "أماكن أخرى".</p>
             )}
           </div>
         </div>
       </Card>
 
-      {/* ======= SCHOOL MODE UI ======= */}
+      {/* ======= SCHOOL MODE ======= */}
       {mode === "school" && (
         <>
-          {/* facility / center / school */}
           <Card>
             <div className="grid md:grid-cols-2 gap-4">
               <div className="flex flex-col">
                 <label className="hpv-label">المنشأة الصحية</label>
-                <input
-                  value={facility}
-                  disabled
-                  className="hpv-input bg-gray-100"
-                />
-                <span className="hpv-help mt-1">
-                  يتم تحديدها تلقائيًا حسب صلاحياتك.
-                </span>
+                <input value={facility} disabled className="hpv-input bg-gray-100" />
+                <span className="hpv-help mt-1">يتم تحديدها تلقائيًا حسب صلاحياتك.</span>
               </div>
-
               <div className="flex flex-col">
                 <label className="hpv-label">اسم المركز الصحي</label>
-                <select
-                  value={center}
-                  onChange={(e) => setCenter(e.target.value)}
-                  className="hpv-select"
-                >
-                  {centers.length === 0 && (
-                    <option value="">— لا توجد مراكز —</option>
-                  )}
-                  {centers.map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
+                <select value={center} onChange={(e) => setCenter(e.target.value)} className="hpv-select">
+                  {centers.length === 0 && <option value="">— لا توجد مراكز —</option>}
+                  {centers.map((c) => <option key={c} value={c}>{c}</option>)}
                 </select>
               </div>
-
               <div className="flex flex-col md:col-span-2">
                 <label className="hpv-label">اسم المدرسة</label>
-                <select
-                  value={school}
-                  onChange={(e) => setSchool(e.target.value)}
-                  className="hpv-select"
-                >
-                  {schools.length === 0 && (
-                    <option value="">— لا توجد مدارس لهذا المركز —</option>
-                  )}
-                  {schools.map((s) => (
-                    <option key={s} value={s}>
-                      {s}
-                    </option>
-                  ))}
+                <select value={school} onChange={(e) => setSchool(e.target.value)} className="hpv-select">
+                  {schools.length === 0 && <option value="">— لا توجد مدارس لهذا المركز —</option>}
+                  {schools.map((s) => <option key={s} value={s}>{s}</option>)}
                 </select>
               </div>
             </div>
           </Card>
 
-          {/* fixed info */}
-          <Card
-            title="الحقول الثابتة"
-            subtitle="تُعرض للمرجع ولا يمكن تعديلها هنا."
-          >
+          <Card title="الحقول الثابتة" subtitle="تُعرض للمرجع ولا يمكن تعديلها هنا.">
             <div className="grid md:grid-cols-4 gap-3 text-sm">
-              <div className="flex flex-col">
-                <label className="hpv-label">الجنس</label>
-                <input
-                  disabled
-                  className="hpv-input bg-gray-100"
-                  value={fixed.sex || "غير محدد"}
-                />
-              </div>
-              <div className="flex flex-col">
-                <label className="hpv-label">السلطة</label>
-                <input
-                  disabled
-                  className="hpv-input bg-gray-100"
-                  value={fixed.authority || "غير محدد"}
-                />
-              </div>
-              <div className="flex flex-col">
-                <label className="hpv-label">المرحلة</label>
-                <input
-                  disabled
-                  className="hpv-input bg-gray-100"
-                  value={fixed.stage || "غير محدد"}
-                />
-              </div>
-              <div className="flex flex-col">
-                <label className="hpv-label">إجمالي المدرسة</label>
-                <input
-                  disabled
-                  className="hpv-input bg-gray-100"
-                  value={fixed.schoolTotal || 0}
-                />
-              </div>
+              <div className="flex flex-col"><label className="hpv-label">الجنس</label><input disabled className="hpv-input bg-gray-100" value={fixed.sex || "غير محدد"} /></div>
+              <div className="flex flex-col"><label className="hpv-label">السلطة</label><input disabled className="hpv-input bg-gray-100" value={fixed.authority || "غير محدد"} /></div>
+              <div className="flex flex-col"><label className="hpv-label">المرحلة</label><input disabled className="hpv-input bg-gray-100" value={fixed.stage || "غير محدد"} /></div>
+              <div className="flex flex-col"><label className="hpv-label">إجمالي المدرسة</label><input disabled className="hpv-input bg-gray-100" value={fixed.schoolTotal || 0} /></div>
             </div>
           </Card>
 
-          {/* numbers */}
+          <Card>
+            <div className="grid md:grid-cols-4 gap-4 text-sm">
+              <div className="flex flex-col"><label className="hpv-label">مطعّم اليوم حتى الآن</label><input disabled className="hpv-input bg-gray-100" value={todaySoFar.loading ? "…" : todayVaccinated} /></div>
+              <div className="flex flex-col"><label className="hpv-label">بعد هذا الإدخال سيصبح المطعّم</label><input disabled className="hpv-input bg-gray-100" value={todaySoFar.loading ? "…" : projectedVaccinated} /></div>
+              <div className="flex flex-col"><label className="hpv-label">المتبقي من إجمالي المدرسة</label><input disabled className="hpv-input bg-gray-100" value={todaySoFar.loading ? "…" : remainingFromTotal} /></div>
+              <div className="flex flex-col justify-end">{willExceedTotal ? <Badge tone="warn">تنبيه: سيتجاوز إجمالي المطعّمين عدد المدرسة</Badge> : <Badge tone="ok">الحسابات محدثة لليوم</Badge>}</div>
+            </div>
+          </Card>
+
+            {/* numbers */}
           <Card>
             <div className="grid md:grid-cols-4 gap-4">
               <div className="flex flex-col">
                 <label className="hpv-label">عدد المطعّمين</label>
-                <input
-                  type="number"
-                  min="0"
-                  value={vaccinated}
-                  onChange={(e) => setVaccinated(e.target.value)}
-                  className="hpv-input"
-                  inputMode="numeric"
-                />
+                <input type="number" min="0" value={vaccinated} onChange={(e) => setVaccinated(e.target.value)} className="hpv-input" inputMode="numeric" />
               </div>
               <div className="flex flex-col">
                 <label className="hpv-label">عدد الرفض</label>
-                <input
-                  type="number"
-                  min="0"
-                  value={refused}
-                  onChange={(e) => setRefused(e.target.value)}
-                  className="hpv-input"
-                  inputMode="numeric"
-                />
+                <input type="number" min="0" value={refused} onChange={(e) => setRefused(e.target.value)} className="hpv-input" inputMode="numeric" />
               </div>
               <div className="flex flex-col">
                 <label className="hpv-label">عدد الغياب</label>
-                <input
-                  type="number"
-                  min="0"
-                  value={absent}
-                  onChange={(e) => setAbsent(e.target.value)}
-                  className="hpv-input"
-                  inputMode="numeric"
-                />
+                <input type="number" min="0" value={absent} onChange={(e) => setAbsent(e.target.value)} className="hpv-input" inputMode="numeric" />
               </div>
               <div className="flex flex-col">
                 <label className="hpv-label">غير مطعّم (محسوب)</label>
-                <input
-                  value={unvaccinated}
-                  disabled
-                  className="hpv-input bg-gray-100"
-                />
+                <input value={unvaccinated} disabled className="hpv-input bg-gray-100" />
               </div>
             </div>
-            <div className="mt-3">
-              <Badge tone="warn">تذكير: غير مطعّم = رفض + غياب</Badge>
-            </div>
+            <div className="mt-3"><Badge tone="warn">تذكير: غير مطعّم = رفض + غياب</Badge></div>
           </Card>
         </>
       )}
 
-      {/* ======= PLACE MODE UI ======= */}
+      {/* ======= PLACE MODE ======= */}
       {mode === "place" && (
         <>
           <Card>
             <div className="grid md:grid-cols-2 gap-4">
               <div className="flex flex-col">
                 <label className="hpv-label">المنشأة الصحية</label>
-                <input
-                  value={facility || "—"}
-                  disabled
-                  className="hpv-input bg-gray-100"
-                />
-                <span className="hpv-help mt-1">
-                  يتم تسجيل الحملة كموقع عام وليس مدرسة.
-                </span>
+                <input value={facility || "—"} disabled className="hpv-input bg-gray-100" />
+                <span className="hpv-help mt-1">سيتم حفظ الإدخال كموقع عام (ليس مدرسة).</span>
               </div>
-
               <div className="flex flex-col">
                 <label className="hpv-label">المكان</label>
-                <select
-                  value={place}
-                  onChange={(e) => setPlace(e.target.value)}
-                  className="hpv-select"
-                >
+                <select value={place} onChange={(e) => setPlace(e.target.value)} className="hpv-select">
                   <option value="">— اختر المكان —</option>
-                  {PLACE_OPTIONS.map((p) => (
-                    <option key={p} value={p}>
-                      {p}
-                    </option>
-                  ))}
+                  {["سجون", "دار الأيتام", "مولات", "أحياء عشوائية"].map((p) => <option key={p} value={p}>{p}</option>)}
                 </select>
-                <span className="hpv-help mt-1">
-                  سيتم حفظ المكان في حقل (اسم المدرسة) ليلائم قاعدة البيانات.
-                </span>
               </div>
             </div>
           </Card>
@@ -596,36 +390,9 @@ export default function UserForm({
             <div className="grid md:grid-cols-3 gap-4">
               <div className="flex flex-col">
                 <label className="hpv-label">عدد المطعّمين</label>
-                <input
-                  type="number"
-                  min="0"
-                  value={vaccinated}
-                  onChange={(e) => setVaccinated(e.target.value)}
-                  className="hpv-input"
-                  inputMode="numeric"
-                />
+                <input type="number" min="0" value={vaccinated} onChange={(e) => setVaccinated(e.target.value)} className="hpv-input" inputMode="numeric" />
               </div>
-
-              <div className="flex flex-col">
-                <label className="hpv-label">عدد الرفض</label>
-                <input
-                  value="0"
-                  disabled
-                  className="hpv-input bg-gray-100"
-                />
-              </div>
-
-              <div className="flex flex-col">
-                <label className="hpv-label">عدد الغياب</label>
-                <input
-                  value="0"
-                  disabled
-                  className="hpv-input bg-gray-100"
-                />
-              </div>
-            </div>
-            <div className="mt-3">
-              <Badge>سيتم احتساب (غير مطعّم) = 0 للأماكن الأخرى.</Badge>
+              {/* refusal/absent hidden -> saved as 0 */}
             </div>
           </Card>
         </>
@@ -633,15 +400,9 @@ export default function UserForm({
 
       {/* actions */}
       <div className="flex flex-wrap gap-2 items-center">
-        <button type="submit" className="hpv-btn-primary" disabled={isSaving}>
-          مراجعة
-        </button>
-        {status.type === "ok" && (
-          <span className="text-green-600 text-sm">{status.msg}</span>
-        )}
-        {status.type === "error" && (
-          <span className="text-red-600 text-sm">{status.msg}</span>
-        )}
+        <button type="submit" className="hpv-btn-primary" disabled={isSaving}>مراجعة</button>
+        {status.type === "ok" && <span className="text-green-600 text-sm">{status.msg}</span>}
+        {status.type === "error" && <span className="text-red-600 text-sm">{status.msg}</span>}
         {isSaving && <span className="text-gray-500 text-sm">جارٍ الحفظ…</span>}
       </div>
 
@@ -652,22 +413,8 @@ export default function UserForm({
         title="تأكيد الإرسال"
         actions={
           <>
-            <button
-              onClick={confirmSave}
-              type="button"
-              className="hpv-btn-primary"
-              disabled={isSaving}
-            >
-              إرسال
-            </button>
-            <button
-              onClick={() => setPreview(null)}
-              type="button"
-              className="hpv-btn-ghost"
-              disabled={isSaving}
-            >
-              تعديل
-            </button>
+            <button onClick={confirmSave} type="button" className="hpv-btn-primary" disabled={isSaving}>إرسال</button>
+            <button onClick={() => setPreview(null)} type="button" className="hpv-btn-ghost" disabled={isSaving}>تعديل</button>
           </>
         }
       >
@@ -679,8 +426,6 @@ export default function UserForm({
                 <div><b>المنشأة:</b> {preview.facility}</div>
                 <div><b>المكان:</b> {preview.place}</div>
                 <div><b>مطعّم:</b> {preview.vaccinated}</div>
-                <div><b>رفض:</b> 0</div>
-                <div><b>غياب:</b> 0</div>
               </div>
             ) : (
               <div className="grid md:grid-cols-3 gap-3 text-sm">
@@ -688,7 +433,8 @@ export default function UserForm({
                 <div><b>المنشأة:</b> {preview.facility}</div>
                 <div><b>المركز:</b> {preview.center}</div>
                 <div><b>المدرسة:</b> {preview.school}</div>
-                <div><b>مطعّم:</b> {preview.vaccinated}</div>
+                <div><b>مطعّم (سيصبح):</b> {preview._wouldBeVaccinated}</div>
+                <div><b>مطعّم اليوم حتى الآن:</b> {preview._todaySoFar}</div>
                 <div><b>رفض:</b> {preview.refused}</div>
                 <div><b>غياب:</b> {preview.absent}</div>
                 <div><b>غير مطعّم:</b> {preview.unvaccinated}</div>
@@ -696,6 +442,7 @@ export default function UserForm({
                 <div><b>السلطة:</b> {preview.authority || "—"}</div>
                 <div><b>المرحلة:</b> {preview.stage || "—"}</div>
                 <div><b>العدد الإجمالي للمدرسة:</b> {preview.schoolTotal || 0}</div>
+                {preview._warnExceed && <div className="md:col-span-3"><Badge tone="warn">تنبيه: هذا الإدخال سيتجاوز إجمالي عدد الطلاب</Badge></div>}
               </div>
             )}
           </>
