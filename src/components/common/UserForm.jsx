@@ -1,6 +1,6 @@
 // File: src/components/common/UserForm.jsx
 import React, { useEffect, useState, useMemo } from "react";
-import { submitDailyEntry } from "../../lib/storage";
+import { submitDailyEntry, UPSERT_MODES } from "../../lib/storage";
 import { getSchoolStatic } from "../../data/meta"; // fixed info
 
 const DEBUG = true;
@@ -89,7 +89,8 @@ export default function UserForm({
   onSubmit,
   schoolInfo,
 }) {
-  // Mode selector — 'school' (default if centers exist) OR 'place'
+  // === NEW: Mode selector ===
+  // 'school' (default if centers exist) OR 'place'
   const centers = meta?.centersByFacility?.[facility] || [];
   const [mode, setMode] = useState(centers.length > 0 ? "school" : "place");
 
@@ -111,7 +112,7 @@ export default function UserForm({
   const [status, setStatus] = useState({ type: "idle", msg: "" });
   const [preview, setPreview] = useState(null);
 
-  // Arabic-friendly styles
+  // Local component styling (Arabic-friendly)
   const brandStyles = useMemo(
     () => (
       <style>{`
@@ -276,36 +277,36 @@ export default function UserForm({
     log("previewData (school)", data);
   }
 
-  // ✅ NEW: correct payloads for school/place
   async function saveToAPI(p) {
+    // Shared payload columns expected by backend
     const isPlace = p.mode === "place";
-
     const input = {
-      entry_date: p.date, // "YYYY-MM-DD"
       facility: p.facility,
-      created_by: email || p.email || null,
-
-      location_type: isPlace ? "place" : "school",
-      place_category: isPlace ? p.place : null,
-
-      clinic_name: isPlace ? null : p.center,
-      school_name: isPlace ? null : p.school,
-
-      gender: isPlace ? null : p.sex || null,
+      clinic_name: isPlace ? "—" : p.center, // invisible center for places
+      school_name: isPlace ? p.place : p.school, // store the place label here
+      gender: isPlace ? null : p.sex || "غير محدد",
       authority: isPlace ? null : p.authority || null,
       stage: isPlace ? null : p.stage || null,
-
       vaccinated: Number(p.vaccinated) || 0,
       refused: isPlace ? 0 : Number(p.refused) || 0,
       absent: isPlace ? 0 : Number(p.absent) || 0,
       not_accounted: isPlace ? 0 : Number(p.unvaccinated) || 0,
       school_total: isPlace ? 0 : Number(p.schoolTotal) || 0,
+      created_by: email || p.email || "",
     };
 
     log("submitDailyEntry payload ->", input);
-    const res = await submitDailyEntry(input);
-    if (res?.error) throw new Error(res.error.message || "فشل حفظ السجل");
-    return res.data ?? res;
+    // Upsert by (created_by, clinic_name, school_name)
+    const res = await submitDailyEntry(input, { mode: UPSERT_MODES.PER_PAIR });
+
+    if (res && typeof res === "object" && ("error" in res || "data" in res)) {
+      if (res.error) {
+        const message = res.error.message || res.error || "فشل حفظ السجل";
+        throw new Error(message);
+      }
+      return res.data ?? res;
+    }
+    return res;
   }
 
   async function confirmSave() {
@@ -341,10 +342,40 @@ export default function UserForm({
             <span className="dot" />
             <span>بيانات الإدخال</span>
           </div>
+          <div className="ml-auto flex items-center gap-2">
+            <Badge
+              tone={
+                status.type === "ok"
+                  ? "ok"
+                  : status.type === "error"
+                  ? "error"
+                  : "brand"
+              }
+            >
+              {status.type === "ok"
+                ? "تم الحفظ"
+                : status.type === "error"
+                ? status.msg || "فشل حفظ السجل"
+                : "جاهز للإدخال"}
+            </Badge>
+            <div
+              className="w-36 h-2 rounded-full bg-gray-200 overflow-hidden"
+              title={`اكتمال ${completeness}%`}
+            >
+              <div
+                className="h-full"
+                style={{
+                  width: `${completeness}%`,
+                  background:
+                    "linear-gradient(90deg,var(--brand),var(--brand-dark))",
+                }}
+              />
+            </div>
+          </div>
         </div>
       </Card>
 
-      {/* Mode selection */}
+      {/* === NEW: Mode selection === */}
       <Card>
         <div className="grid md:grid-cols-3 gap-4">
           <div className="flex flex-col md:col-span-3">
@@ -353,26 +384,21 @@ export default function UserForm({
               <button
                 type="button"
                 onClick={() => setMode("school")}
-                className={`hpv-btn-ghost ${
-                  mode === "school" ? "ring-2 ring-sky-300" : ""
-                }`}
+                className={`hpv-btn-ghost ${mode === "school" ? "ring-2 ring-sky-300" : ""}`}
               >
                 مدارس عبر المركز الصحي
               </button>
               <button
                 type="button"
                 onClick={() => setMode("place")}
-                className={`hpv-btn-ghost ${
-                  mode === "place" ? "ring-2 ring-sky-300" : ""
-                }`}
+                className={`hpv-btn-ghost ${mode === "place" ? "ring-2 ring-sky-300" : ""}`}
               >
                 أماكن أخرى (سجون/مولات/دار الأيتام/أحياء)
               </button>
             </div>
             {mode === "school" && centers.length === 0 && (
               <p className="hpv-help mt-2 text-red-600">
-                لا توجد مراكز صحية مرتبطة بمنشأتك — يمكنك استخدام وضع "أماكن
-                أخرى".
+                لا توجد مراكز صحية مرتبطة بمنشأتك — يمكنك استخدام وضع "أماكن أخرى".
               </p>
             )}
           </div>
@@ -541,7 +567,7 @@ export default function UserForm({
                   className="hpv-input bg-gray-100"
                 />
                 <span className="hpv-help mt-1">
-                  سيتم حفظ الإدخال كموقع عام (ليس مدرسة).
+                  يتم تسجيل الحملة كموقع عام وليس مدرسة.
                 </span>
               </div>
 
@@ -559,7 +585,9 @@ export default function UserForm({
                     </option>
                   ))}
                 </select>
-                <span className="hpv-help mt-1"></span>
+                <span className="hpv-help mt-1">
+                  سيتم حفظ المكان في حقل (اسم المدرسة) ليلائم قاعدة البيانات.
+                </span>
               </div>
             </div>
           </Card>
@@ -580,16 +608,24 @@ export default function UserForm({
 
               <div className="flex flex-col">
                 <label className="hpv-label">عدد الرفض</label>
-                <input value="0" disabled className="hpv-input bg-gray-100" />
+                <input
+                  value="0"
+                  disabled
+                  className="hpv-input bg-gray-100"
+                />
               </div>
 
               <div className="flex flex-col">
                 <label className="hpv-label">عدد الغياب</label>
-                <input value="0" disabled className="hpv-input bg-gray-100" />
+                <input
+                  value="0"
+                  disabled
+                  className="hpv-input bg-gray-100"
+                />
               </div>
             </div>
             <div className="mt-3">
-              <Badge>غير مطعّم = 0 للأماكن الأخرى.</Badge>
+              <Badge>سيتم احتساب (غير مطعّم) = 0 للأماكن الأخرى.</Badge>
             </div>
           </Card>
         </>
@@ -639,63 +675,27 @@ export default function UserForm({
           <>
             {preview.mode === "place" ? (
               <div className="grid md:grid-cols-3 gap-3 text-sm">
-                <div>
-                  <b>التاريخ:</b> {preview.date}
-                </div>
-                <div>
-                  <b>المنشأة:</b> {preview.facility}
-                </div>
-                <div>
-                  <b>المكان:</b> {preview.place}
-                </div>
-                <div>
-                  <b>مطعّم:</b> {preview.vaccinated}
-                </div>
-                <div>
-                  <b>رفض:</b> 0
-                </div>
-                <div>
-                  <b>غياب:</b> 0
-                </div>
+                <div><b>التاريخ:</b> {preview.date}</div>
+                <div><b>المنشأة:</b> {preview.facility}</div>
+                <div><b>المكان:</b> {preview.place}</div>
+                <div><b>مطعّم:</b> {preview.vaccinated}</div>
+                <div><b>رفض:</b> 0</div>
+                <div><b>غياب:</b> 0</div>
               </div>
             ) : (
               <div className="grid md:grid-cols-3 gap-3 text-sm">
-                <div>
-                  <b>التاريخ:</b> {preview.date}
-                </div>
-                <div>
-                  <b>المنشأة:</b> {preview.facility}
-                </div>
-                <div>
-                  <b>المركز:</b> {preview.center}
-                </div>
-                <div>
-                  <b>المدرسة:</b> {preview.school}
-                </div>
-                <div>
-                  <b>مطعّم:</b> {preview.vaccinated}
-                </div>
-                <div>
-                  <b>رفض:</b> {preview.refused}
-                </div>
-                <div>
-                  <b>غياب:</b> {preview.absent}
-                </div>
-                <div>
-                  <b>غير مطعّم:</b> {preview.unvaccinated}
-                </div>
-                <div>
-                  <b>الجنس:</b> {preview.sex || "—"}
-                </div>
-                <div>
-                  <b>السلطة:</b> {preview.authority || "—"}
-                </div>
-                <div>
-                  <b>المرحلة:</b> {preview.stage || "—"}
-                </div>
-                <div>
-                  <b>العدد الإجمالي للمدرسة:</b> {preview.schoolTotal || 0}
-                </div>
+                <div><b>التاريخ:</b> {preview.date}</div>
+                <div><b>المنشأة:</b> {preview.facility}</div>
+                <div><b>المركز:</b> {preview.center}</div>
+                <div><b>المدرسة:</b> {preview.school}</div>
+                <div><b>مطعّم:</b> {preview.vaccinated}</div>
+                <div><b>رفض:</b> {preview.refused}</div>
+                <div><b>غياب:</b> {preview.absent}</div>
+                <div><b>غير مطعّم:</b> {preview.unvaccinated}</div>
+                <div><b>الجنس:</b> {preview.sex || "—"}</div>
+                <div><b>السلطة:</b> {preview.authority || "—"}</div>
+                <div><b>المرحلة:</b> {preview.stage || "—"}</div>
+                <div><b>العدد الإجمالي للمدرسة:</b> {preview.schoolTotal || 0}</div>
               </div>
             )}
           </>
