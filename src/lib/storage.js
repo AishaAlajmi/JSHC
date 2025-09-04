@@ -1,91 +1,51 @@
-// src/lib/storage.js
-import { makeSupabase } from "./supabaseClient";
+import { supabase } from "./supabaseClient";
 
-const today = () => new Date().toISOString().slice(0, 10);
-
-// Insert one row into daily_entries (works for school and place)
+/** Insert a daily entry (multiple rows allowed). */
 export async function submitDailyEntry(input) {
-  const supabase = makeSupabase();
-  if (!supabase) return { error: { message: "Supabase env not configured" } };
-
-  const isPlace = (input.location_type || "").toLowerCase() === "place";
-
-<<<<<<< HEAD
-  const payload = {
-    entry_date: input.entry_date || input.date || today(),
-    facility: input.facility ?? null,
-
-    // school fields
-    clinic_name: isPlace ? null : (input.clinic_name ?? null),
-    school_name: isPlace ? null : (input.school_name ?? null),
-    gender:      isPlace ? null : (input.gender ?? null),
-    authority:   isPlace ? null : (input.authority ?? null),
-    stage:       isPlace ? null : (input.stage ?? null),
-    vaccinated:        Number(input.vaccinated || 0),
-    refused:     isPlace ? 0 : Number(input.refused || 0),
-    absent:      isPlace ? 0 : Number(input.absent || 0),
-    not_accounted: isPlace ? 0 : Number(input.not_accounted || 0),
-    school_total:  isPlace ? 0 : Number(input.school_total || 0),
-
-    // place fields
-    location_type: isPlace ? "place" : "school",
-    place_category: isPlace ? (input.place_category || input.place || null) : null,
-
-    created_by: input.created_by || input.email || null,
-=======
-/**
- * Submit (UPSERT) a daily entry.
- * - Ensures `entry_date` is present (defaults to today or `row.date`).
- * - Sends a hint `_upsert` so the API can decide onConflict target.
- *
- * @param {Object} row  - your payload (clinic_name, school_name, vaccinated, ...)
- * @param {Object} [opts]
- * @param {'pair'|'per_day'} [opts.mode='per_day']
- */
-export async function submitDailyEntry(row, { mode = UPSERT_MODES.PER_DAY } = {}) {
-  const payload = {
-    ...row,
-    entry_date: row.entry_date || row.date || todayStr(), // <-- important
-    _upsert: mode, // server will read this to pick onConflict
->>>>>>> parent of 1d20872a (Add files via upload)
-  };
-
-  // Simple INSERT (no upsert) – works even if you haven't created UNIQUE indexes yet
   const { data, error } = await supabase
     .from("daily_entries")
-    .insert([payload])
+    .insert(input)
     .select()
     .single();
-
-  if (error) return { error };
-  return { data };
+  return { data, error };
 }
 
-<<<<<<< HEAD
-export async function getEntries({ from, to, facility, locationType } = {}) {
-  const supabase = makeSupabase();
-  if (!supabase) return { rows: [] };
-=======
-/**
- * Load entries (your API can accept filters like created_by, date range, etc.)
- * Example: getEntries({ created_by: email })
- */
+/** Sum today's totals for a given (user + facility + center + school). */
+export async function fetchSchoolDayTotals({
+  created_by,
+  facility,
+  clinic_name,
+  school_name,
+  entry_date, // "YYYY-MM-DD"
+}) {
+  const { data, error } = await supabase
+    .from("daily_entries")
+    .select("vaccinated, refused, absent")
+    .eq("created_by", created_by)
+    .eq("facility", facility)
+    .eq("clinic_name", clinic_name)
+    .eq("school_name", school_name)
+    .eq("entry_date", entry_date);
+
+  if (error) return { data: { vaccinated: 0, refused: 0, absent: 0 }, error };
+
+  const totals = (data || []).reduce(
+    (acc, row) => {
+      acc.vaccinated += Number(row.vaccinated) || 0;
+      acc.refused    += Number(row.refused)    || 0;
+      acc.absent     += Number(row.absent)     || 0;
+      return acc;
+    },
+    { vaccinated: 0, refused: 0, absent: 0 }
+  );
+
+  return { data: totals, error: null };
+}
+
+/** Fetch entries (admin sees all; user filtered by created_by if passed). */
 export async function getEntries(params = {}) {
-  const qs = new URLSearchParams(params).toString();
-  const res = await fetch("/api/entries" + (qs ? `?${qs}` : ""));
->>>>>>> parent of 1d20872a (Add files via upload)
-
   let q = supabase.from("daily_entries").select("*");
-
-  if (from)        q = q.gte("entry_date", from);
-  if (to)          q = q.lte("entry_date", to);
-  if (facility)    q = q.eq("facility", facility);
-  if (locationType)q = q.eq("location_type", locationType);
-
-  q = q.order("entry_date", { ascending: false })
-       .order("created_at", { ascending: false });
-
-  const { data, error } = await q;
-  if (error) return { error };
-  return { rows: data || [] };
+  if (params.created_by) q = q.eq("created_by", params.created_by);
+  const { data, error } = await q.order("entry_date", { ascending: false }).limit(2000);
+  return { rows: data || [], error };
 }

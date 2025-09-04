@@ -61,7 +61,11 @@ function Field({ label, children }) {
 
 export default function MyRecordsSmart({ email, rows }) {
   const [filters, setFilters] = useState({
-    from: "", to: "", q: "", sortBy: "date", dir: "desc",
+    from: "",
+    to: "",
+    q: "",
+    sortBy: "date",
+    dir: "desc",
   });
 
   const filtered = useMemo(
@@ -84,8 +88,7 @@ export default function MyRecordsSmart({ email, rows }) {
       arr.sort((a, b) => (a.vaccinated - b.vaccinated) * dir);
     else if (filters.sortBy === "unvaccinated")
       arr.sort((a, b) => (a.unvaccinated - b.unvaccinated) * dir);
-    else
-      arr.sort((a, b) => a.date.localeCompare(b.date) * dir);
+    else arr.sort((a, b) => a.date.localeCompare(b.date) * dir);
     return arr;
   }, [filtered, filters.sortBy, filters.dir]);
 
@@ -112,7 +115,9 @@ export default function MyRecordsSmart({ email, rows }) {
               <input
                 type="date"
                 value={filters.from}
-                onChange={(e) => setFilters((x) => ({ ...x, from: e.target.value }))}
+                onChange={(e) =>
+                  setFilters((x) => ({ ...x, from: e.target.value }))
+                }
                 className="hpv-input"
               />
             </Field>
@@ -120,7 +125,9 @@ export default function MyRecordsSmart({ email, rows }) {
               <input
                 type="date"
                 value={filters.to}
-                onChange={(e) => setFilters((x) => ({ ...x, to: e.target.value }))}
+                onChange={(e) =>
+                  setFilters((x) => ({ ...x, to: e.target.value }))
+                }
                 className="hpv-input"
               />
             </Field>
@@ -128,40 +135,30 @@ export default function MyRecordsSmart({ email, rows }) {
               <input
                 placeholder="ابحث في المركز/المدرسة"
                 value={filters.q}
-                onChange={(e) => setFilters((x) => ({ ...x, q: e.target.value }))}
+                onChange={(e) =>
+                  setFilters((x) => ({ ...x, q: e.target.value }))
+                }
                 className="hpv-input"
               />
             </Field>
-            <Field label="ترتيب حسب">
-              <select
-                value={filters.sortBy}
-                onChange={(e) => setFilters((x) => ({ ...x, sortBy: e.target.value }))}
-                className="hpv-select"
+            <div className="flex gap-2 mb-3">
+              <button
+                type="button"
+                className="hpv-btn hpv-btn-primary"
+                onClick={() => {
+                  /* noop: already reactive */
+                }}
               >
-                <option value="date">التاريخ</option>
-                <option value="vaccinated">مطعّم</option>
-                <option value="unvaccinated">غير مطعّم</option>
-              </select>
-            </Field>
-            <Field label="الاتجاه">
-              <select
-                value={filters.dir}
-                onChange={(e) => setFilters((x) => ({ ...x, dir: e.target.value }))}
-                className="hpv-select"
+                تطبيق
+              </button>
+              <button
+                type="button"
+                className="hpv-btn hpv-btn-ghost"
+                onClick={clearFilters}
               >
-                <option value="desc">الأكثر</option>
-                <option value="asc">الأقل</option>
-              </select>
-            </Field>
-          </div>
-
-          <div className="flex gap-2 mb-3">
-            <button type="button" className="hpv-btn hpv-btn-primary" onClick={() => { /* noop: already reactive */ }}>
-              تطبيق
-            </button>
-            <button type="button" className="hpv-btn hpv-btn-ghost" onClick={clearFilters}>
-              مسح الفلاتر
-            </button>
+                مسح الفلاتر
+              </button>
+            </div>
           </div>
 
           {/* Table */}
@@ -171,7 +168,7 @@ export default function MyRecordsSmart({ email, rows }) {
                 <tr>
                   <th>التاريخ</th>
                   <th>المركز</th>
-                  <th>المدرسة</th>
+                  <th>المكان</th>
                   <th>مطعّم</th>
                   <th>رفض</th>
                   <th>غياب</th>

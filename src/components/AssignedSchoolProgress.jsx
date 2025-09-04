@@ -10,17 +10,14 @@ const key = (center, school) => `${center}||${school}`;
 function indexAssigned(assignedList = []) {
   const map = new Map();
   assignedList.forEach((s) => {
-    map.set(
-      key(s.center, s.school),
-      {
-        center: s.center,
-        school: s.school,
-        total: Number(s.total || 0) || 0,
-        gender: s.gender || null,
-        authority: s.authority || null,
-        stage: s.stage || null,
-      }
-    );
+    map.set(key(s.center, s.school), {
+      center: s.center,
+      school: s.school,
+      total: Number(s.total || 0) || 0,
+      gender: s.gender || null,
+      authority: s.authority || null,
+      stage: s.stage || null,
+    });
   });
   return map;
 }
@@ -93,7 +90,12 @@ function computeAssignedProgress(assignedMap, progressMap) {
   return out;
 }
 
-export default function AssignedSchoolProgress({ META, facility, rows, email }) {
+export default function AssignedSchoolProgress({
+  META,
+  facility,
+  rows,
+  email,
+}) {
   const items = useMemo(() => {
     // 1) assigned list from META for this facility
     const assigned = Array.isArray(META?.[facility]) ? META[facility] : [];
@@ -106,72 +108,8 @@ export default function AssignedSchoolProgress({ META, facility, rows, email }) 
     return computeAssignedProgress(assignedMap, progressMap);
   }, [META, facility, rows, email]);
 
-  const done = items.filter(i => i.completed).length;
+  const done = items.filter((i) => i.completed).length;
   const total = items.length;
 
-  return (
-    <div className="p-4 rounded-2xl bg-white border border-slate-200/80 shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
-      <div className="flex items-center gap-2 mb-3">
-        <div className="font-semibold text-slate-800">إنجاز المدارس المكلّف بها</div>
-        <div className="ml-auto text-sm text-slate-500">مكتمل: {done} / {total}</div>
-      </div>
-
-      <div className="overflow-auto">
-        <table className="min-w-full text-sm">
-          <thead className="bg-slate-50">
-            <tr className="text-right">
-              <th className="p-2">المركز</th>
-              <th className="p-2">المدرسة</th>
-              <th className="p-2">إجمالي</th>
-              <th className="p-2">مطعّم</th>
-              <th className="p-2">المتبقي</th>
-              <th className="p-2">الحالة</th>
-            </tr>
-          </thead>
-          <tbody>
-            {items.map((r) => {
-              const rowKey = `${r.center}|${r.school}`;
-              return (
-                <tr key={rowKey} className="border-b hover:bg-slate-50">
-                  <td className="p-2">{r.center}</td>
-                  <td className="p-2">
-                    <div className="font-medium">{r.school}</div>
-                    <div className="text-xs text-slate-500">
-                      {r.gender ? `• ${r.gender}` : ""} {r.authority ? `• ${r.authority}` : ""} {r.stage ? `• ${r.stage}` : ""}
-                    </div>
-                  </td>
-                  <td className="p-2">{r.total}</td>
-                  <td className="p-2">{r.vaccinated}</td>
-                  <td className="p-2">{r.remaining}</td>
-                  <td className="p-2">
-                    {r.total === 0 ? (
-                      <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-slate-50 text-slate-700 border border-slate-200">
-                        لا يوجد إجمالي
-                      </span>
-                    ) : r.completed ? (
-                      <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-green-50 text-green-700 border border-green-200">
-                        مكتمل
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-yellow-50 text-yellow-700 border border-yellow-200">
-                        غير مكتمل
-                      </span>
-                    )}
-                  </td>
-                </tr>
-              );
-            })}
-            {items.length === 0 && (
-              <tr><td colSpan={6} className="p-3 text-center text-slate-500">لا توجد مدارس مكلّف بها في القائمة.</td></tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-
-      {/* Optional: small legend */}
-      <div className="mt-2 text-xs text-slate-500">
-        الحالة تعتمد على مقارنة "مطعّم" مقابل "إجمالي" من ملف meta.js. المتبقي = إجمالي − مطعّم.
-      </div>
-    </div>
-  );
+  
 }

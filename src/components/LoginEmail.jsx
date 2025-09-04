@@ -54,8 +54,7 @@ export default function LoginEmail({ onLogin, users }) {
         {error && <span className="text-red-600">{error}</span>}
       </form>
       <div className="text-xs text-gray-500 mt-2">
-        المسموح: aishahadi2013@gmail.com / jamelah.hadi2019@gmail.com /
-        hajer@gmail.com / alia@gmail.com
+     
       </div>
     </Card>
   );
