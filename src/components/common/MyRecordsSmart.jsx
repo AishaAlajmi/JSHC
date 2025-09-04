@@ -171,7 +171,7 @@ export default function MyRecordsSmart({ email, rows }) {
                 <tr>
                   <th>التاريخ</th>
                   <th>المركز</th>
-                  <th>المكان</th>
+                  <th>المدرسة</th>
                   <th>مطعّم</th>
                   <th>رفض</th>
                   <th>غياب</th>
