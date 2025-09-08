@@ -9,7 +9,8 @@
 // Columns used: school_total, not_accounted, absent, refused, vaccinated, school_name, clinic_name, facility
 
 import React, { useEffect, useMemo, useState } from "react";
- import "chart.js/auto";
+import { Bar, Doughnut } from "react-chartjs-2";
+import "chart.js/auto";
 import { createClient } from "@supabase/supabase-js";
 
 // --- Supabase client (single-file friendly) ---
