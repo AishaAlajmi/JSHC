@@ -1132,7 +1132,7 @@ const RABIGH_SCHOOLS = [
   { center: "الصليب الشرقي", school: "البشر بن عاصم", gender: "بنين", authority: "حكومي", stage: "ابتدائي", total: 118 },
   { center: "الصليب الشرقي", school: "تحفيظ القران الابتدائي", gender: "بنات", authority: "حكومي", stage: "ابتدائي", total: 251 },
   { center: "الصليب الشرقي", school: "الابتدائية الاولى برابغ", gender: "بنات", authority: "حكومي", stage: "ابتدائي", total: 454 },
-  
+
   // ===== الجوبة =====
   { center: "الجوبة", school: "مدرسة الجوبة الابتدائية", gender: "بنين", authority: "حكومي", stage: "ابتدائي", total: 119 },
   { center: "الجوبة", school: "مدرسة الجوبة الابتدائية", gender: "بنين", authority: "حكومي", stage: "ابتدائي", total: 119 },

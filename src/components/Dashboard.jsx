@@ -1,835 +1,457 @@
-import React, { useMemo, useState } from "react";
-import {
-  ResponsiveContainer,
-  AreaChart,
-  Area,
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-  BarChart,
-  Bar,
-  LabelList,
-  PieChart,
-  Pie,
-  Cell,
-  RadialBarChart,
-  RadialBar,
-} from "recharts";
-import ReactECharts from "echarts-for-react";
+// Supabase Vaccination Admin Dashboard (single-file React component)
+// ---------------------------------------------------------------
+// Requirements (run once):
+//   npm i @supabase/supabase-js react-chartjs-2 chart.js
+// Add to .env (Vite):
+//   VITE_SUPABASE_URL=...
+//   VITE_SUPABASE_ANON_KEY=...
+// Table assumed: daily_entries
+// Columns used: school_total, not_accounted, absent, refused, vaccinated, school_name, clinic_name, facility
 
-// ===== ألوان عامة =====
-const C = {
-  sky: "#0ea5e9",
-  skyLight: "#e0f2fe",
-  emerald: "#10b981",
-  red: "#ef4444",
-  amber: "#f59e0b",
-  slate: "#94a3b8",
-  ink: "#0f172a",
-};
+import React, { useEffect, useMemo, useState } from "react";
+import { Bar, Doughnut } from "react-chartjs-2";
+import "chart.js/auto";
+import { createClient } from "@supabase/supabase-js";
 
-// ===== لبنات واجهة بسيطة =====
-const Wrap = ({ children }) => (
-  <div className="space-y-5">
-    <div className="rounded-2xl p-5 bg-slate-900 text-white shadow">
-      <div className="text-xl font-semibold">لوحة المدير — متابعة التطعيم</div>
-      <div className="text-white/70 text-sm">
-        عرض المستشفيات والمراكز والمدارس مع الأهداف
-      </div>
-    </div>
-    {children}
-  </div>
-);
-function Card({ title, subtitle, actions, pad = true, children }) {
+// --- Supabase client (single-file friendly) ---
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const supabase = createClient(supabaseUrl, supabaseKey);
+
+// --- small UI bits ---
+function StatCard({ icon, label, value }) {
   return (
-    <div className="rounded-2xl shadow bg-white">
-      <div className="flex items-center gap-2 px-4 pt-3">
-        {title && <div className="font-semibold">{title}</div>}
-        {subtitle && (
-          <div className="text-sm text-slate-500 ml-2">{subtitle}</div>
-        )}
-        <div className="ml-auto flex gap-2">{actions}</div>
+    <div className="bg-white rounded-lg px-3 py-3 flex flex-col items-center justify-center text-center gap-1 shadow-sm border border-slate-200 h-[92px]">
+      <div className="text-2xl leading-none">{icon}</div>
+      <div className="text-[11px] text-slate-500">{label}</div>
+      <div className="text-4xl font-extrabold tracking-tight text-slate-900">
+        {Number.isFinite(value) ? value : "—"}
       </div>
-      <div className={pad ? "p-4" : ""}>{children}</div>
-    </div>
-  );
-}
-function KPI({ label, value, hint, tone = "sky" }) {
-  const toneMap = {
-    sky: `bg-sky-50 text-sky-700 border-sky-100`,
-    emerald: `bg-emerald-50 text-emerald-700 border-emerald-100`,
-    red: `bg-rose-50 text-rose-700 border-rose-100`,
-    amber: `bg-amber-50 text-amber-700 border-amber-100`,
-    slate: `bg-slate-50 text-slate-700 border-slate-100`,
-  };
-  return (
-    <div className={`rounded-2xl p-4 border ${toneMap[tone]}`}>
-      <div className="text-sm">{label}</div>
-      <div className="text-3xl font-bold mt-1">{value}</div>
-      {hint && <div className="text-xs mt-1 opacity-80">{hint}</div>}
     </div>
   );
 }
 
-// ===== مساعدين =====
-const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
-const fmt = (n) => Number(n || 0).toLocaleString("ar-EG");
-const pct = (a, b) => (b > 0 ? Math.round((a / b) * 100) : 0);
-const unique = (arr) => Array.from(new Set(arr.filter(Boolean)));
-const dateKey = (d) => (d || "").slice(0, 10);
+function Filter({ label, value, onChange, options }) {
+  return (
+    <label className="flex items-center gap-2 text-slate-700 text-xs">
+      <span className="opacity-80 w-24 truncate">{label}</span>
+      <select
+        className="bg-white border border-slate-300 rounded-xl px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500/30 min-w-[160px]"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      >
+        <option value="All">All</option>
+        {options.map((o) => (
+          <option key={o || "—"} value={o}>
+            {o || "—"}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
 
-// نوع الجهة: مدارس / سجون / أخرى
-const typeOfRow = (r) => {
-  const s =
-    (r.school || "") + " " + (r.authority || "") + " " + (r.stage || "");
-  if (/[سس]جن|نزيل|إصلاحية/.test(s)) return "سجون";
-  if (/مدرس/.test(s) || r.stage || r.school) return "مدارس";
-  return "أخرى";
+// --- helpers ---
+const uniq = (arr) => Array.from(new Set(arr.filter((x) => x !== undefined && x !== null)));
+const safeDiv = (a, b) => (b ? a / b : 0);
+const isOther = (s) =>
+  !s || ["other", "أخرى", "-", "أخري", "Other"].includes(String(s).trim().toLowerCase());
+
+const groupSum = (rows, key) => {
+  const map = new Map();
+  rows.forEach((r) => {
+    const k = r[key] || "—";
+    const o = map.get(k) || {
+      vaccinated: 0,
+      refused: 0,
+      absent: 0,
+      not_accounted: 0,
+      school_total: 0,
+    };
+    o.vaccinated += r.vaccinated ?? 0;
+    o.refused += r.refused ?? 0;
+    o.absent += r.absent ?? 0;
+    o.not_accounted += r.not_accounted ?? 0;
+    o.school_total += r.school_total ?? 0;
+    map.set(k, o);
+  });
+  return Array.from(map, ([name, vals]) => ({ name, ...vals }));
 };
 
-// ألوان إنجاز الهدف (تقدّم نحو 70% من إجمالي الطلاب)
-const progressColor = (p) => {
-  if (p >= 100) return C.emerald; // حقق الهدف أو تجاوز
-  if (p >= 80) return "#34d399"; // قريب جدًا
-  if (p >= 50) return C.amber; // متوسط
-  return C.red; // متدنّي
+const schoolsAgg = (rows) => {
+  const map = new Map();
+  rows.forEach((r) => {
+    const s = r.school_name || "";
+    if (isOther(s)) return;
+    const o = map.get(s) || { v: 0, r: 0, a: 0, n: 0, tot: 0 };
+    o.v += r.vaccinated ?? 0;
+    o.r += r.refused ?? 0;
+    o.a += r.absent ?? 0;
+    o.n += r.not_accounted ?? 0;
+    o.tot = Math.max(o.tot, r.school_total ?? 0);
+    map.set(s, o);
+  });
+  return Array.from(map, ([school, o]) => ({
+    school,
+    ...o,
+    covered: o.v === o.tot && o.r === 0 && o.a === 0,
+    coverage: safeDiv(o.v, o.tot),
+  }));
 };
 
-// ====== Mind-map (شجري) ======
-const MM_COLORS = {
-  good: "#10b981",
-  mid: "#f59e0b",
-  bad: "#ef4444",
-  node: "#94a3b8",
-};
-const mmColor = (p) =>
-  p >= 80 ? MM_COLORS.good : p >= 50 ? MM_COLORS.mid : MM_COLORS.bad;
+export default function VaccinationAdminDashboard() {
+  // filters
+  const [facility, setFacility] = useState("All");
+  const [clinic, setClinic] = useState("All");
+  const [school, setSchool] = useState("All");
 
-const withExpanded = (node) => {
-  const n = { ...node, collapsed: false };
-  if (n.children) n.children = n.children.map(withExpanded);
-  return n;
-};
+  // data
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
-function buildMindMapTree(rows) {
-  const byFac = new Map();
-  for (const r of rows) {
-    const f = r.facility || "غير محدد";
-    const c = r.center || "—";
-    const s = r.school || "—";
-    if (!byFac.has(f)) byFac.set(f, new Map());
-    const byCtr = byFac.get(f);
-    if (!byCtr.has(c)) byCtr.set(c, new Map());
-    const bySch = byCtr.get(c);
-    if (!bySch.has(s))
-      bySch.set(s, { vaccinated: 0, unvaccinated: 0, refused: 0, absent: 0 });
-    const x = bySch.get(s);
-    x.vaccinated += num(r.vaccinated);
-    x.unvaccinated += num(r.unvaccinated);
-    x.refused += num(r.refused);
-    x.absent += num(r.absent);
-  }
-
-  const hospitals = [];
-  for (const [fac, ctrMap] of byFac.entries()) {
-    let facV = 0,
-      facD = 0;
-    const centers = [];
-
-    for (const [ctr, schMap] of ctrMap.entries()) {
-      let ctrV = 0,
-        ctrD = 0;
-      const schools = [];
-
-      for (const [sch, agg] of schMap.entries()) {
-        const den =
-          agg.vaccinated + agg.unvaccinated + agg.refused + agg.absent;
-        const cover = pct(agg.vaccinated, den);
-        ctrV += agg.vaccinated;
-        ctrD += den;
-
-        schools.push({
-          name: `${sch}`,
-          value: agg.vaccinated,
-          label: {
-            formatter: (p) =>
-              `{n|${p.name}}  {v|${agg.vaccinated.toLocaleString(
-                "ar-EG"
-              )} مطعّم}`,
-            rich: {
-              n: { fontSize: 12, color: "#0f172a" },
-              v: {
-                fontSize: 12,
-                fontWeight: 600,
-                color: "#0f172a",
-                backgroundColor: "#f1f5f9",
-                padding: [2, 6],
-                borderRadius: 999,
-              },
-            },
-            position: "right",
-            align: "left",
-            overflow: "truncate",
-            width: 260,
-          },
-          itemStyle: { color: mmColor(cover) },
-        });
+  // fetch once
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        setLoading(true);
+        const { data, error } = await supabase
+          .from("daily_entries")
+          .select(
+            "school_total, not_accounted, absent, refused, vaccinated, school_name, clinic_name, facility"
+          )
+          .limit(100000);
+        if (error) throw error;
+        if (mounted) setRows(data || []);
+      } catch (e) {
+        console.error(e);
+        setError(e.message || String(e));
+      } finally {
+        setLoading(false);
       }
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
-      const ctrCover = pct(ctrV, ctrD);
-      centers.push({
-        name: `${ctr}`,
-        value: ctrV,
-        label: {
-          formatter: (p) =>
-            `{h|${p.name}}  {v|${ctrV.toLocaleString("ar-EG")} مطعّم}`,
-          rich: {
-            h: { fontWeight: 700, color: "#0f172a" },
-            v: {
-              fontSize: 12,
-              fontWeight: 700,
-              color: "#0f172a",
-              backgroundColor: "#e0f2fe",
-              padding: [2, 8],
-              borderRadius: 999,
-            },
-          },
-          position: "right",
-          align: "left",
-          width: 280,
-          overflow: "truncate",
-        },
-        itemStyle: { color: mmColor(ctrCover) },
-        children: schools.sort((a, b) => b.value - a.value),
-      });
+  // --- Filter options (cascading) ---
+  const facilities = useMemo(() => uniq(rows.map((r) => r.facility)).sort(), [rows]);
 
-      facV += ctrV;
-      facD += ctrD;
-    }
+  const clinicsAll = useMemo(() => uniq(rows.map((r) => r.clinic_name)).sort(), [rows]);
+  const clinicsForFacility = useMemo(() => {
+    if (facility === "All") return clinicsAll;
+    return uniq(rows.filter((r) => r.facility === facility).map((r) => r.clinic_name)).sort();
+  }, [rows, facility, clinicsAll]);
 
-    const facCover = pct(facV, facD);
-    hospitals.push({
-      name: `${fac}`,
-      value: facV,
-      label: {
-        formatter: (p) =>
-          `{hh|${p.name}}  {v|${facV.toLocaleString("ar-EG")} مطعّم}`,
-        rich: {
-          hh: { fontWeight: 800, color: "#0f172a" },
-          v: {
-            fontSize: 12,
-            fontWeight: 800,
-            color: "#0f172a",
-            backgroundColor: "#dcfce7",
-            padding: [2, 8],
-            borderRadius: 999,
-          },
-        },
-        position: "right",
-        align: "left",
-        width: 300,
-        overflow: "truncate",
-      },
-      itemStyle: { color: mmColor(facCover) },
-      children: centers.sort((a, b) => b.value - a.value),
+  const schoolsAll = useMemo(() => uniq(rows.map((r) => r.school_name)).sort(), [rows]);
+  const schoolsForSelection = useMemo(() => {
+    let arr = rows;
+    if (facility !== "All") arr = arr.filter((r) => r.facility === facility);
+    if (clinic !== "All") arr = arr.filter((r) => r.clinic_name === clinic);
+    return uniq(arr.map((r) => r.school_name)).sort();
+  }, [rows, facility, clinic]);
+
+  // Reset lower-level filters when parent changes
+  useEffect(() => {
+    setClinic((prev) => (clinicsForFacility.includes(prev) || prev === "All" ? prev : "All"));
+    setSchool("All");
+  }, [facility, clinicsForFacility]);
+
+  useEffect(() => {
+    setSchool((prev) => {
+      const allowed = schoolsForSelection.includes(prev) || prev === "All";
+      return allowed ? prev : "All";
     });
-  }
+  }, [clinic, schoolsForSelection]);
 
-  const root =
-    hospitals.length === 1
-      ? withExpanded(hospitals[0])
-      : withExpanded({
-          name: "المستشفيات",
-          value: 0,
-          label: { fontWeight: 700, color: "#0f172a" },
-          itemStyle: { color: MM_COLORS.node },
-          children: hospitals.sort((a, b) => b.value - a.value),
-        });
-
-  return [root];
-}
-
-// ===== المكوّن الرئيسي =====
-export default function Dashboard({ responses = [] }) {
-  // فلاتر
-  const [filters, setFilters] = useState({ from: "", to: "", facility: "" });
-  const [viz, setViz] = useState("tree"); // tree | sunburst (لو حبّيت ترجعها)
-
-  const allFacilities = useMemo(
-    () => unique(responses.map((r) => r.facility)),
-    [responses]
-  );
-
+  // apply filters
   const filtered = useMemo(() => {
-    return responses.filter((r) => {
-      const inDate =
-        (!filters.from || r.date >= filters.from) &&
-        (!filters.to || r.date <= filters.to);
-      const inFac = !filters.facility || r.facility === filters.facility;
-      return inDate && inFac;
-    });
-  }, [responses, filters]);
+    return rows.filter(
+      (r) =>
+        (facility === "All" || r.facility === facility) &&
+        (clinic === "All" || r.clinic_name === clinic) &&
+        (school === "All" || r.school_name === school)
+    );
+  }, [rows, facility, clinic, school]);
 
-  // مجاميع عامة
+  // KPIs
   const totals = useMemo(
     () =>
       filtered.reduce(
-        (a, r) => ({
-          vaccinated: a.vaccinated + num(r.vaccinated),
-          unvaccinated: a.unvaccinated + num(r.unvaccinated),
-          refused: a.refused + num(r.refused),
-          absent: a.absent + num(r.absent),
+        (a, c) => ({
+          v: a.v + (c.vaccinated || 0),
+          r: a.r + (c.refused || 0),
+          a: a.a + (c.absent || 0),
+          n: a.n + (c.not_accounted || 0),
+          t: a.t + (c.school_total || 0),
         }),
-        { vaccinated: 0, unvaccinated: 0, refused: 0, absent: 0 }
+        { v: 0, r: 0, a: 0, n: 0, t: 0 }
       ),
     [filtered]
   );
-  const denom =
-    totals.vaccinated + totals.unvaccinated + totals.refused + totals.absent;
-  const cov = pct(totals.vaccinated, denom);
-  const refusalRate = pct(totals.refused, denom);
-  const absenceRate = pct(totals.absent, denom); 
 
-  // اتجاه زمني
-  const byDate = useMemo(() => {
-    const m = new Map();
-    filtered.forEach((r) => {
-      const k = dateKey(r.date);
-      if (!m.has(k)) m.set(k, { date: k, vaccinated: 0, unvaccinated: 0 });
-      const x = m.get(k);
-      x.vaccinated += num(r.vaccinated);
-      x.unvaccinated += num(r.unvaccinated);
-    });
-    return Array.from(m.values()).sort((a, b) => a.date.localeCompare(b.date));
-  }, [filtered]);
+  const denom = totals.v + totals.r + totals.a + totals.n;
 
-  // ===== حساب هدف 70% لكل مستشفى =====
-  // نبني (facility → school → max(schoolTotal)) لتجنّب العد المكرر
-  const hospitalTotals = useMemo(() => {
-    const facMap = new Map();
-    filtered.forEach((r) => {
-      const f = r.facility || "-";
-      const s = r.school || "-";
-      const st = num(r.schoolTotal);
-      if (!facMap.has(f)) facMap.set(f, new Map());
-      const schools = facMap.get(f);
-      const prev = schools.get(s) || 0;
-      if (st > prev) schools.set(s, st);
-    });
-    // الناتج: facility → { studentTotal, target(70%), vaccinated }
-    const byFac = new Map();
-    filtered.forEach((r) => {
-      const f = r.facility || "-";
-      if (!byFac.has(f)) byFac.set(f, { students: 0, vaccinated: 0 });
-      byFac.get(f).vaccinated += num(r.vaccinated);
-    });
-    for (const [f, schools] of facMap.entries()) {
-      const students = Array.from(schools.values()).reduce((a, b) => a + b, 0);
-      if (!byFac.has(f)) byFac.set(f, { students, vaccinated: 0 });
-      byFac.get(f).students = students;
-    }
-    const out = [];
-    for (const [f, v] of byFac.entries()) {
-      const target = Math.round(v.students * 0.7);
-      out.push({
-        facility: f,
-        students: v.students,
-        target,
-        achieved: v.vaccinated,
-        progressToTarget:
-          target > 0 ? Math.round((v.vaccinated / target) * 100) : 0,
-      });
-    }
-    return out.sort((a, b) => b.achieved - a.achieved);
-  }, [filtered]);
-
-  // مقارنة المراكز حسب عدد المطعّمين
-  const centerCompare = useMemo(() => {
-    const m = new Map();
-    filtered.forEach((r) => {
-      const k = r.center || "—";
-      if (!m.has(k))
-        m.set(k, { name: k, vaccinated: 0, refused: 0, absent: 0 });
-      const x = m.get(k);
-      x.vaccinated += num(r.vaccinated);
-      x.refused += num(r.refused);
-      x.absent += num(r.absent);
-    });
-    return Array.from(m.values()).sort((a, b) => b.vaccinated - a.vaccinated);
-  }, [filtered]);
-
-  // تفصيل المدارس داخل كل مركز (إذا تم اختيار مستشفى)
-  const centersDetail = useMemo(() => {
-    if (!filters.facility) return [];
-    const m = new Map(); // center -> { totalVacc, schools[] }
-    filtered.forEach((r) => {
-      if (r.facility !== filters.facility) return;
-      const c = r.center || "—";
-      if (!m.has(c)) m.set(c, { center: c, vaccinated: 0, schools: new Map() });
-      const x = m.get(c);
-      x.vaccinated += num(r.vaccinated);
-      const s = r.school || "—";
-      if (!x.schools.has(s))
-        x.schools.set(s, {
-          name: s,
-          vaccinated: 0,
-          refused: 0,
-          absent: 0,
-          total: num(r.schoolTotal),
-        });
-      const sc = x.schools.get(s);
-      sc.vaccinated += num(r.vaccinated);
-      sc.refused += num(r.refused);
-      sc.absent += num(r.absent);
-      sc.total = Math.max(sc.total, num(r.schoolTotal));
-    });
-    return Array.from(m.values())
-      .map((c) => ({
-        ...c,
-        schools: Array.from(c.schools.values()).sort(
-          (a, b) => b.vaccinated - a.vaccinated
-        ),
-      }))
-      .sort((a, b) => b.vaccinated - a.vaccinated);
-  }, [filtered, filters.facility]);
-
-  // تقسيم النوع (مدارس/سجون/أخرى)
-  const typeSplit = useMemo(() => {
-    const m = new Map();
-    filtered.forEach((r) => {
-      const t = typeOfRow(r);
-      if (!m.has(t)) m.set(t, 0);
-      m.set(t, m.get(t) + num(r.vaccinated));
-    });
-    const arr = Array.from(m.entries()).map(([name, value]) => ({
-      name,
-      value,
-    }));
-    // ترتيب: مدارس، سجون، أخرى
-    const order = { مدارس: 0, سجون: 1, أخرى: 2 };
-    return arr.sort((a, b) => (order[a.name] ?? 9) - (order[b.name] ?? 9));
-  }, [filtered]);
-
-  // خيارات الشجري
-  const treeData = useMemo(() => buildMindMapTree(filtered), [filtered]);
-  const treeOption = useMemo(
+  const kpis = useMemo(
     () => ({
-      backgroundColor: "transparent",
-      tooltip: { trigger: "item" },
-      series: [
+      total_vaccinated: totals.v,
+      coverage_pct: safeDiv(totals.v, totals.t) * 100,
+      refused_pct: safeDiv(totals.r, denom) * 100,
+      absent_pct: safeDiv(totals.a, denom) * 100,
+      not_accounted_pct: safeDiv(totals.n, denom) * 100,
+      visited_schools: new Set(filtered.map((r) => r.school_name).filter((s) => !isOther(s))).size,
+      fully_covered_schools: schoolsAgg(filtered).filter((s) => s.covered).length,
+      facilities: new Set(filtered.map((r) => r.facility)).size,
+      clinics: new Set(filtered.map((r) => r.clinic_name)).size,
+    }),
+    [filtered, totals, denom]
+  );
+
+  // -------- Dynamic primary chart mode --------
+  // facility==All && clinic==All -> by Facility
+  // facility!=All && clinic==All -> by Clinic
+  // clinic!=All -> by School
+  const primaryMode = clinic !== "All" ? "school" : facility !== "All" ? "clinic" : "facility";
+  const primaryTitle =
+    primaryMode === "facility"
+      ? "Coverage by Facility"
+      : primaryMode === "clinic"
+      ? `Coverage by Clinic${facility !== "All" ? ` (Facility: ${facility})` : ""}`
+      : `Coverage by School${clinic !== "All" ? ` (Clinic: ${clinic})` : ""}`;
+
+  const byPrimary = useMemo(() => {
+    if (primaryMode === "facility") {
+      const items = groupSum(filtered, "facility").map((x) => ({
+        ...x,
+        coverage: safeDiv(x.vaccinated, x.school_total),
+      }));
+      return items.sort((a, b) => b.coverage - a.coverage);
+    }
+    if (primaryMode === "clinic") {
+      const items = groupSum(filtered, "clinic_name").map((x) => ({
+        ...x,
+        coverage: safeDiv(x.vaccinated, x.school_total),
+      }));
+      return items.sort((a, b) => b.coverage - a.coverage);
+    }
+    // school mode
+    const items = schoolsAgg(filtered).map((s) => ({
+      name: s.school,
+      vaccinated: s.v,
+      school_total: s.tot,
+      coverage: safeDiv(s.v, s.tot),
+    }));
+    return items.sort((a, b) => b.coverage - a.coverage).slice(0, 20); // limit a bit for readability
+  }, [filtered, primaryMode]);
+
+  const primaryData = useMemo(
+    () => ({
+      labels: byPrimary.map((x) => x.name || "—"),
+      datasets: [{ label: "Coverage %", data: byPrimary.map((x) => Math.round((x.coverage || 0) * 100)) }],
+    }),
+    [byPrimary]
+  );
+
+  const primaryOpts = {
+    indexAxis: "y",
+    plugins: { title: { display: true, text: primaryTitle } },
+    maintainAspectRatio: false,
+    scales: { x: { ticks: { callback: (v) => `${v}%` }, suggestedMax: 100 } },
+  };
+
+  // -------- Other charts (unchanged) --------
+  const byFacility = useMemo(() => {
+    const items = groupSum(filtered, "facility").map((x) => ({
+      ...x,
+      coverage: safeDiv(x.vaccinated, x.school_total),
+    }));
+    return items.sort((a, b) => b.coverage - a.coverage);
+  }, [filtered]);
+
+  const stackedData = useMemo(
+    () => ({
+      labels: byFacility.map((x) => x.name),
+      datasets: [
+        { label: "Vaccinated", data: byFacility.map((x) => x.vaccinated), type: "bar", stack: "tot" },
+        { label: "Refused", data: byFacility.map((x) => x.refused), type: "bar", stack: "tot" },
+        { label: "Absent", data: byFacility.map((x) => x.absent), type: "bar", stack: "tot" },
+        { label: "Not Accounted", data: byFacility.map((x) => x.not_accounted), type: "bar", stack: "tot" },
+      ],
+    }),
+    [byFacility]
+  );
+
+  const stackedOpts = {
+    responsive: true,
+    maintainAspectRatio: false,
+    scales: { x: { stacked: true }, y: { stacked: true } },
+    plugins: { title: { display: true, text: "Status by Facility (Stacked)" } },
+  };
+
+  const byClinic = useMemo(() => {
+    const items = groupSum(filtered, "clinic_name");
+    return items.sort((a, b) => b.vaccinated - a.vaccinated).slice(0, 10);
+  }, [filtered]);
+
+  const clinicData = useMemo(
+    () => ({
+      labels: byClinic.map((x) => x.name || "—"),
+      datasets: [{ label: "Vaccinated", data: byClinic.map((x) => x.vaccinated) }],
+    }),
+    [byClinic]
+  );
+
+  const clinicOpts = {
+    plugins: { title: { display: true, text: "Top 10 Clinics by Vaccination" } },
+    maintainAspectRatio: false,
+  };
+
+  // ----- Bottom 10 Schools by Coverage (with fallback) -----
+  const bottomConfig = useMemo(() => {
+    const list = schoolsAgg(filtered).filter((s) => s.tot > 0);
+    const withCoverage = list.filter((s) => s.tot > 0); // already filtered, but explicit
+    const hasAnyCoverage = withCoverage.some((s) => s.coverage > 0 || (s.v + s.r + s.a + s.n) > 0);
+
+    if (!hasAnyCoverage || withCoverage.length === 0) {
+      // Fallback: Top 10 by Vaccinated
+      const topVacc = schoolsAgg(filtered)
+        .filter((s) => s.v > 0)
+        .sort((a, b) => b.v - a.v)
+        .slice(0, 10);
+      return {
+        title: "Top 10 Schools by Vaccinated (fallback)",
+        labels: topVacc.map((s) => s.school),
+        values: topVacc.map((s) => s.v),
+        isFallback: true,
+      };
+    }
+
+    const bottom = withCoverage.sort((a, b) => a.coverage - b.coverage).slice(0, 10);
+    return {
+      title: "Bottom 10 Schools by Coverage",
+      labels: bottom.map((s) => s.school),
+      values: bottom.map((s) => Math.round((s.coverage || 0) * 100)),
+      isFallback: false,
+    };
+  }, [filtered]);
+
+  const bottomData = useMemo(
+    () => ({
+      labels: bottomConfig.labels,
+      datasets: [
         {
-          type: "tree",
-          data: treeData,
-          top: "5%",
-          left: "2%",
-          bottom: "5%",
-          right: "22%",
-          orient: "LR",
-          symbol: "circle",
-          symbolSize: 8,
-          edgeShape: "polyline",
-          lineStyle: { width: 1, color: "#e2e8f0" },
-          expandAndCollapse: true,
-          initialTreeDepth: 99,
-          label: { position: "right", align: "left", color: "#0f172a" },
-          leaves: { label: { position: "right", align: "left" } },
-          emphasis: { focus: "ancestor" },
+          label: bottomConfig.isFallback ? "Vaccinated" : "Coverage %",
+          data: bottomConfig.values,
         },
       ],
     }),
-    [treeData]
+    [bottomConfig]
   );
 
-  // ===== الواجهة =====
+  const bottomOpts = {
+    indexAxis: "y",
+    plugins: { title: { display: true, text: bottomConfig.title } },
+    maintainAspectRatio: false,
+    scales: bottomConfig.isFallback
+      ? { x: { ticks: {} } }
+      : { x: { ticks: { callback: (v) => `${v}%` }, suggestedMax: 100 } },
+  };
+
+  const statusData = useMemo(
+    () => ({
+      labels: ["Vaccinated", "Refused", "Absent", "Not Accounted"],
+      datasets: [{ data: [totals.v, totals.r, totals.a, totals.n], borderWidth: 0 }],
+    }),
+    [totals]
+  );
+
+  const statusOpts = {
+    plugins: { title: { display: true, text: "Overall Status Distribution" } },
+    maintainAspectRatio: false,
+    cutout: "60%",
+  };
+
+  // UI
   return (
-    <Wrap>
-      {/* فلاتر + أزرار المستشفيات */}
-      <Card title="الترشيح" subtitle="اختر مستشفى أو الكل">
-        <div className="grid sm:grid-cols-2 lg:grid-cols-5 gap-3 mb-3">
-          <div className="flex flex-col">
-            <label className="text-sm">من تاريخ</label>
-            <input
-              type="date"
-              value={filters.from}
-              onChange={(e) =>
-                setFilters((x) => ({ ...x, from: e.target.value }))
-              }
-              className="border rounded-xl px-3 py-2"
-            />
-          </div>
-          <div className="flex flex-col">
-            <label className="text-sm">إلى تاريخ</label>
-            <input
-              type="date"
-              value={filters.to}
-              onChange={(e) =>
-                setFilters((x) => ({ ...x, to: e.target.value }))
-              }
-              className="border rounded-xl px-3 py-2"
-            />
-          </div>
-          <div className="flex items-end">
-            <button
-              onClick={() => setFilters({ from: "", to: "", facility: "" })}
-              className="px-4 py-2 rounded-xl border w-full hover:bg-gray-50"
-            >
-              مسح التصفية
-            </button>
-          </div>
+    <div className="min-h-screen w-full bg-[#F5F7FB] text-slate-900 p-4">
+      {/* Header + Filters */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3 bg-white border border-slate-200 rounded-xl px-4 py-2 shadow-sm">
+          <span className="text-emerald-600 text-xl">▣</span>
+          <span className="font-semibold">Vaccination Admin Dashboard</span>
         </div>
 
-        {/* أزرار سريعة لكل مستشفى */}
-        <div className="flex gap-2 overflow-x-auto py-1">
-          <button
-            onClick={() => setFilters((x) => ({ ...x, facility: "" }))}
-            className={`px-3 py-1 rounded-full border ${
-              !filters.facility
-                ? "bg-sky-50 border-sky-200 text-sky-700"
-                : "hover:bg-gray-50"
-            }`}
-          >
-            الكل
-          </button>
-          {allFacilities.map((f) => (
-            <button
-              key={f}
-              onClick={() => setFilters((x) => ({ ...x, facility: f }))}
-              className={`px-3 py-1 rounded-full border ${
-                filters.facility === f
-                  ? "bg-sky-50 border-sky-200 text-sky-700"
-                  : "hover:bg-gray-50"
-              }`}
-              title={f}
-            >
-              {f}
-            </button>
-          ))}
-        </div>
-      </Card>
-
-      {/* KPIs عامة */}
-      <div className="grid gap-4 lg:grid-cols-3">
-        <Card
-          title="نسبة التغطية الإجمالية"
-          subtitle="(مطعّم ÷ إجمالي الحالات)"
-          pad={false}
-        >
-          <div className="h-64 relative">
-            <ResponsiveContainer width="100%" height="100%">
-              <RadialBarChart
-                data={[{ name: "coverage", value: Math.max(0, cov) }]}
-                innerRadius="70%"
-                outerRadius="100%"
-                startAngle={90}
-                endAngle={-270}
-              >
-                <RadialBar dataKey="value" cornerRadius={20} fill={C.emerald} />
-              </RadialBarChart>
-            </ResponsiveContainer>
-            <div className="absolute inset-0 grid place-items-center">
-              <div className="text-center">
-                <div
-                  className="text-4xl font-bold"
-                  style={{ color: C.emerald }}
-                >
-                  {cov}%
-                </div>
-                <div className="text-slate-500 text-sm mt-1">
-                  {fmt(totals.vaccinated)} مطعّم من {fmt(denom)}
-                </div>
-              </div>
-            </div>
-          </div>
-          <div className="px-4 pb-4 grid grid-cols-3 gap-3">
-            <KPI
-              label="نسبة الرفض"
-              value={`${refusalRate}%`}
-              hint={fmt(totals.refused)}
-              tone="amber"
-            />
-            <KPI
-              label="نسبة الغياب"
-              value={`${absenceRate}%`}
-              hint={fmt(totals.absent)}
-              tone="slate"
-            />
-            <KPI
-              label="غير مطعّم"
-              value={fmt(totals.unvaccinated)}
-              tone="red"
-            />
-          </div>
-        </Card>
-
-        <Card
-          title="اتجاه التنفيذ الزمني"
-          subtitle="تراكمي حسب التاريخ"
-          pad={false}
-        >
-          <div className="h-64">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart
-                data={byDate}
-                margin={{ top: 10, right: 10, left: 0, bottom: 10 }}
-              >
-                <defs>
-                  <linearGradient id="g1" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor={C.emerald} stopOpacity={0.6} />
-                    <stop
-                      offset="95%"
-                      stopColor={C.emerald}
-                      stopOpacity={0.05}
-                    />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="date" />
-                <YAxis />
-                <Tooltip />
-                <Area
-                  type="monotone"
-                  dataKey="vaccinated"
-                  name="مطعّم"
-                  stroke={C.emerald}
-                  fill="url(#g1)"
-                  strokeWidth={2}
-                />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-        </Card>
-
-        <Card title="تقسيم النوع" subtitle="مدارس / سجون / أخرى" pad={false}>
-          <div className="h-64">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={typeSplit}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={45}
-                  outerRadius={80}
-                  dataKey="value"
-                  nameKey="name"
-                >
-                  {["#22c55e", "#3b82f6", "#94a3b8"].map((c, i) => (
-                    <Cell key={i} fill={c} />
-                  ))}
-                </Pie>
-                <Tooltip formatter={(v, n) => [fmt(v), n]} />
-                <Legend />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-        </Card>
-      </div>
-
-      {/* مقارنة المراكز حسب عدد المطعّمين */}
-      <Card
-        title="مقارنة المراكز حسب عدد التطعيمات"
-        subtitle={
-          filters.facility ? `داخل ${filters.facility}` : "جميع المستشفيات"
-        }
-        pad={false}
-      >
-        <div className="h-[420px] p-3">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart
-              data={centerCompare}
-              layout="vertical"
-              margin={{ top: 10, right: 20, bottom: 10, left: 160 }}
-            >
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis type="number" tickFormatter={fmt} />
-              <YAxis
-                type="category"
-                dataKey="name"
-                tick={{ fontSize: 12 }}
-                width={150}
-              />
-              <Tooltip formatter={(v) => fmt(v)} />
-              <Legend />
-              <Bar dataKey="vaccinated" name="مطعّم" fill={C.sky}>
-                <LabelList
-                  dataKey="vaccinated"
-                  position="right"
-                  formatter={(v) => fmt(v)}
-                />
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-      </Card>
-
-      {/* هدف كل مستشفى = 70% من إجمالي الطلاب */}
-      <Card
-        title="تحقيق الهدف لكل مستشفى"
-        subtitle="الهدف = 70% من إجمالي الطلاب لكل مستشفى"
-        pad={false}
-      >
-        <div className="h-[460px] p-3">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart
-              data={hospitalTotals}
-              layout="vertical"
-              margin={{ top: 10, right: 20, bottom: 10, left: 180 }}
-            >
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis type="number" tickFormatter={fmt} />
-              <YAxis dataKey="facility" type="category" width={170} />
-              <Tooltip
-                formatter={(v, n) => [fmt(v), n]}
-                labelFormatter={(l) => l}
-              />
-              <Legend />
-              {/* المتبقي نحو الهدف */}
-              <Bar
-                dataKey={(d) => Math.max(0, d.target - d.achieved)}
-                name="المتبقي للهدف"
-                stackId="t"
-                fill={C.skyLight}
-              />
-              {/* المنجز */}
-              <Bar dataKey="achieved" name="منجز" stackId="t" fill={C.sky}>
-                <LabelList
-                  dataKey="progressToTarget"
-                  position="right"
-                  formatter={(v) => `${Math.min(100, v)}%`}
-                />
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-        {/* شارة صغيرة تشرح اللون حسب الإنجاز */}
-        <div className="px-4 pb-4 text-sm text-slate-600">
-          الألوان داخل القوائم التفصيلية تعكس التقدّم نحو الهدف:{" "}
-          <span style={{ color: progressColor(100) }}>أخضر ≥ 100%</span>،
-          <span style={{ color: progressColor(80) }}> أخضر فاتح ≥ 80%</span>،
-          <span style={{ color: progressColor(50) }}> برتقالي 50–79%</span>،
-          <span style={{ color: progressColor(10) }}> أحمر &lt; 50%</span>.
-        </div>
-      </Card>
-
-      {/* شجري شامل (اختياري) */}
-      <Card
-        title="الخريطة الهرمية: مستشفى ← مراكز ← مدارس"
-        subtitle="العقدة تعرض إجمالي المطعّمين؛ اللون يعكس جودة التغطية"
-        actions={
-          <button
-            className="px-3 py-1 rounded-xl border"
-            onClick={() => setViz("tree")}
-          >
-            شجري
-          </button>
-        }
-      >
-        <div className="h-[560px] rounded-2xl bg-white">
-          <ReactECharts
-            style={{ height: "100%", width: "100%" }}
-            option={treeOption}
+        <div className="flex flex-wrap items-center gap-3">
+          <Filter
+            label="Facility"
+            value={facility}
+            onChange={(val) => {
+              setFacility(val);
+              setClinic("All");
+              setSchool("All");
+            }}
+            options={facilities}
+          />
+          <Filter
+            label="Clinic"
+            value={clinic}
+            onChange={(val) => {
+              setClinic(val);
+              setSchool("All");
+            }}
+            options={clinicsForFacility}
+          />
+          <Filter
+            label="School"
+            value={school}
+            onChange={setSchool}
+            options={schoolsForSelection}
           />
         </div>
-      </Card>
+      </div>
 
-      {/* تفاصيل المستشفى المحدد: كل مركز + مدارس */}
-      {filters.facility && (
-        <Card
-          title={`تفاصيل ${filters.facility}`}
-          subtitle="كل مركز: إجمالي المطعّمين + تقدّم المدارس داخل المركز"
-        >
-          <div className="space-y-5">
-            {centersDetail.map((c) => (
-              <div key={c.center} className="rounded-xl border p-3">
-                <div className="flex items-center justify-between mb-2">
-                  <div className="font-semibold">{c.center}</div>
-                  <div className="text-slate-600">
-                    إجمالي مطعّم: {fmt(c.vaccinated)}
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  {c.schools.map((s, idx) => {
-                    const schoolDen =
-                      s.total || s.vaccinated + s.refused + s.absent;
-                    const cover = pct(s.vaccinated, schoolDen);
-                    return (
-                      <div key={idx} className="flex items-center gap-3">
-                        <div className="w-60 truncate" title={s.name}>
-                          {s.name}
-                        </div>
-                        <div className="flex-1 h-3 rounded-full bg-slate-200 overflow-hidden">
-                          <div
-                            className="h-3"
-                            style={{
-                              width: `${Math.min(100, cover)}%`,
-                              background: progressColor(cover / 0.7), // نسبة التغطية مقابل هدف 70% ≈ تقدم للهدف
-                            }}
-                            title={`تغطية ${cover}%`}
-                          />
-                        </div>
-                        <div className="w-32 text-xs text-right text-slate-600">
-                          مطعّم: {fmt(s.vaccinated)}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            ))}
-            {centersDetail.length === 0 && (
-              <div className="text-slate-500">
-                لا توجد بيانات لهذا المستشفى.
-              </div>
-            )}
-          </div>
-        </Card>
+      {loading && <div className="mt-6 text-sm text-slate-600">Loading data from Supabase…</div>}
+      {error && <div className="mt-6 text-sm text-rose-700">Error: {error}</div>}
+
+      {!loading && !error && filtered.length === 0 && (
+        <div className="mt-6 text-sm text-slate-500">No data for the selected filters.</div>
       )}
 
-      {/* مقارنة مطعّم/غير مطعّم (للمراجعة السريعة) */}
-       
-      <Card title="أحدث السجلات" actions={<button onClick={()=>{ log("export", filtered.length); onExport(filtered); }} className="px-4 py-2 rounded-2xl shadow border hover:bg-gray-50">حفظ كـ Excel</button>}>
-        <div className="overflow-auto">
-          <table className="min-w-full text-sm">
-            <thead>
-              <tr className="text-right border-b">
-                <th className="p-2">التاريخ</th>
-                <th className="p-2">المنشأة</th>
-                <th className="p-2">المركز</th>
-                <th className="p-2">المدرسة</th>
-                <th className="p-2">الجنس</th>
-                <th className="p-2">السلطة</th>
-                <th className="p-2">المرحلة</th>
-                <th className="p-2">إجمالي المدرسة</th>
-                <th className="p-2">مطعّم</th>
-                <th className="p-2">رفض</th>
-                <th className="p-2">غياب</th>
-                <th className="p-2">غير مطعّم</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.slice(-300).reverse().map((r,i)=> (
-                <tr key={i} className="border-b hover:bg-gray-50">
-                  <td className="p-2 whitespace-nowrap">{r.date}</td>
-                  <td className="p-2">{r.facility}</td>
-                  <td className="p-2">{r.center}</td>
-                  <td className="p-2">{r.school}</td>
-                  <td className="p-2">{r.sex||""}</td>
-                  <td className="p-2">{r.authority||""}</td>
-                  <td className="p-2">{r.stage||""}</td>
-                  <td className="p-2">{r.schoolTotal||0}</td>
-                  <td className="p-2">{r.vaccinated}</td>
-                  <td className="p-2">{r.refused}</td>
-                  <td className="p-2">{r.absent}</td>
-                  <td className="p-2">{r.unvaccinated}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      {/* KPIs */}
+      <div className="grid grid-cols-1 md:grid-cols-6 gap-3 mt-4">
+        <StatCard icon="🏫" label="Visited Schools" value={kpis.visited_schools} />
+        <StatCard icon="❔" label="% Not Accounted" value={Math.round(kpis.not_accounted_pct)} />
+        <StatCard icon="⏳" label="% Absent" value={Math.round(kpis.absent_pct)} />
+        <StatCard icon="🧍" label="% Refused" value={Math.round(kpis.refused_pct)} />
+        <StatCard icon="🎯" label="% Coverage" value={Math.round(kpis.coverage_pct)} />
+        <StatCard icon="💉" label="Total Vaccinated" value={kpis.total_vaccinated} />
+      </div>
+
+      {/* Charts */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 mt-4">
+        {/* Dynamic primary chart */}
+        <div className="lg:col-span-7 bg-white rounded-xl p-4 h-[260px] border border-white/10">
+          <Bar data={primaryData} options={primaryOpts} />
         </div>
-      </Card>
-    </Wrap>
+
+        <div className="lg:col-span-5 bg-white rounded-xl p-4 h-[260px] border border-white/10">
+          <Doughnut data={statusData} options={statusOpts} />
+        </div>
+
+        <div className="lg:col-span-12 bg-white rounded-xl p-4 h-[320px] border border-white/10">
+          <Bar data={stackedData} options={stackedOpts} />
+        </div>
+
+        <div className="lg:col-span-6 bg-white rounded-xl p-4 h-[280px] border border-white/10">
+          <Bar data={clinicData} options={clinicOpts} />
+        </div>
+
+        <div className="lg:col-span-6 bg-white rounded-xl p-4 h-[280px] border border-white/10">
+          <Bar data={bottomData} options={bottomOpts} />
+        </div>
+      </div>
+    </div>
   );
 }

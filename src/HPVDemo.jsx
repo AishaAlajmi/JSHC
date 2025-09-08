@@ -51,8 +51,14 @@ function seedUsers() {
   if (existing) return existing;
   const seeded = {
     "aishahadi2013@gmail.com": { role: "user", facility: "رابغ" },
-    "jamelah.hadi2019@gmail.com": { role: "user", facility: "مجمع الملك عبد الله" },
-    "hajer@gmail.com": { role: "user", facility: "م. ا فهد مع المدارس العالمية" },
+    "jamelah.hadi2019@gmail.com": {
+      role: "user",
+      facility: "مجمع الملك عبد الله",
+    },
+    "hajer@gmail.com": {
+      role: "user",
+      facility: "م. ا فهد مع المدارس العالمية",
+    },
     "alia@gmail.com": { role: "admin", facility: null },
   };
   safeSetItem(LS_USERS, seeded, {});
@@ -159,9 +165,14 @@ function AdminManageUsers() {
               <tr key={k} className="border-b hover:bg-slate-50">
                 <td className="p-2">{k}</td>
                 <td className="p-2">{v.role}</td>
-                <td className="p-2">{v.role === "admin" ? "-" : v.facility || ""}</td>
                 <td className="p-2">
-                  <button className="btn btn-ghost" onClick={() => removeKey(k)}>
+                  {v.role === "admin" ? "-" : v.facility || ""}
+                </td>
+                <td className="p-2">
+                  <button
+                    className="btn btn-ghost"
+                    onClick={() => removeKey(k)}
+                  >
                     حذف
                   </button>
                 </td>
@@ -223,7 +234,9 @@ export default function HPVDemo() {
       log("Supabase env not found; cannot fallback.");
       return [];
     }
-    const { data: daily, error: e1 } = await sb.from("daily_entries").select("*");
+    const { data: daily, error: e1 } = await sb
+      .from("daily_entries")
+      .select("*");
     if (e1) {
       console.error("Supabase fallback error:", e1);
       return [];
@@ -442,7 +455,8 @@ export default function HPVDemo() {
       </main>
 
       <footer className="max-w-6xl mx-auto p-4 text-center text-gray-500">
-        حقوق النشر محفوظة لدى <span className="font-bold">تجمع جدة الصحي الثاني</span>
+        حقوق النشر محفوظة لدى{" "}
+        <span className="font-bold">تجمع جدة الصحي الثاني</span>
       </footer>
     </div>
   );
