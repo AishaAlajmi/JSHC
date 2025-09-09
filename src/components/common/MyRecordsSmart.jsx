@@ -1,10 +1,9 @@
 import React, { useMemo, useState, useEffect } from "react";
-import { createClient } from "@supabase/supabase-js";
+import * as XLSX from "xlsx"; // Ensure the XLSX library is imported
 
 /* Local, Arabic-friendly styles kept inside this component only */
 const LocalStyles = () => (
-  <>
-    <style>{`
+  <style>{`
       @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&display=swap');
       @import url('https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css');
       .hpv-screen, .hpv-screen * {
@@ -25,7 +24,6 @@ const LocalStyles = () => (
       .hpv-input { width: 100%; padding: 0.5rem 0.75rem; border-radius: 0.5rem; border: 1px solid #d1d5db; transition: border-color 0.2s; }
       .hpv-input:focus { outline: none; border-color: #1691d0; }
     `}</style>
-  </>
 );
 
 function Field({ label, children }) {
@@ -127,10 +125,15 @@ export default function MyRecordsSmart({ email, rows }) {
       return translatedRow;
     });
 
-    const ws = window.XLSX.utils.json_to_sheet(dataWithArabicHeaders);
-    const wb = window.XLSX.utils.book_new();
-    window.XLSX.utils.book_append_sheet(wb, ws, "سجلاتي");
-    window.XLSX.writeFile(wb, "sijilat_arabic.xlsx");
+    try {
+      const ws = XLSX.utils.json_to_sheet(dataWithArabicHeaders);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "سجلاتي");
+      XLSX.writeFile(wb, "vaccination_records.xlsx");
+    } catch (err) {
+      console.error("Error exporting to Excel:", err);
+      setError("حدث خطأ أثناء تصدير البيانات.");
+    }
   };
 
   // Clear filters
@@ -189,8 +192,6 @@ export default function MyRecordsSmart({ email, rows }) {
                 className="hpv-input"
               />
             </Field>
-
-            
 
             <div className="flex gap-2 mb-3 md:col-span-2">
               <button
