@@ -1,4 +1,3 @@
-// =============================================
 // filepath: src/HPVDemo.jsx
 // =============================================
 import React, { useEffect, useState } from "react";
@@ -249,32 +248,34 @@ export default function HPVDemo() {
     }
     return rows;
   }
+useEffect(() => {
+  if (!user) return; // Exit if no user is logged in
 
-  // Load
-  useEffect(() => {
-    if (!user) return;
-    (async () => {
-      try {
-        const params = user.role === "user" ? { created_by: user.email } : {};
-        const { rows, error } = await getEntries(params);
-        if (error) throw error;
-        const mapped = (rows || []).map(mapEntryToLocal);
-        if (mapped.length > 0) {
-          setRows(mapped);
-          log("Loaded entries via getEntries:", mapped.length);
-          return;
-        }
-        const fb = await loadFromSupabaseFallback(user);
-        setRows(fb);
-        log("Loaded entries via Supabase fallback:", fb.length);
-      } catch (e) {
-        console.warn("Primary load failed; trying Supabase fallback…", e);
-        const fb = await loadFromSupabaseFallback(user);
-        setRows(fb);
+  const fetchData = async () => {
+    try {
+      // Define filters based on user role
+      const params = user.role === "user" ? { created_by: user.email } : {};
+
+      // Fetch data using the updated getEntries function
+      const { rows, error } = await getEntries(params);
+
+      if (error) {
+        throw error;
       }
-    })();
-  }, [user?.email, user?.role]);
 
+      // Map the fetched data to your local format
+      const mapped = (rows || []).map(mapEntryToLocal);
+      setRows(mapped);
+      log("Loaded entries from Supabase:", mapped.length);
+    } catch (e) {
+      console.error("Error fetching data:", e);
+      // Handle the error gracefully, maybe set rows to empty array
+      setRows([]);
+    }
+  };
+
+  fetchData();
+}, [user?.email, user?.role]);
   // upsert locally by (email + center + school)
   function upsertLocalRow(list, row) {
     const idx = list.findIndex(
