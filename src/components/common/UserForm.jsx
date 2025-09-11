@@ -1,5 +1,9 @@
 import React, { useEffect, useState, useMemo } from "react";
-import { submitDailyEntry, fetchSchoolDayTotals } from "../../lib/storage";
+import {
+  submitDailyEntry,
+  fetchSchoolDayTotals,
+  getEntries,
+} from "../../lib/storage";
 import { getSchoolStatic } from "../../data/meta";
 
 const DEBUG = true;
@@ -78,6 +82,19 @@ function Modal({ open, title, children, onClose, actions }) {
   );
 }
 
+/* ---------- Helpers ---------- */
+function fmtKsaTimeOnly(v) {
+  if (!v) return "—";
+  const d = new Date(v);
+  if (isNaN(d)) return "—";
+  return d.toLocaleTimeString("en-US", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+    timeZone: "Asia/Riyadh",
+  });
+}
+
 /* ---------- Main Form ---------- */
 export default function UserForm({
   email,
@@ -113,6 +130,14 @@ export default function UserForm({
   // Shared UI
   const [status, setStatus] = useState({ type: "idle", msg: "" });
   const [preview, setPreview] = useState(null);
+
+  // Last updated (time-only) from DB updated_at
+  const [lastUpdatedTime, setLastUpdatedTime] = useState("—");
+
+  // TABLE state
+  const [tableRows, setTableRows] = useState([]);
+  const [tableLoading, setTableLoading] = useState(false);
+  const [tableErr, setTableErr] = useState("");
 
   // Arabic UI styles
   const brandStyles = useMemo(
@@ -186,7 +211,7 @@ export default function UserForm({
       ? (numberOrNull(refused) || 0) + (numberOrNull(absent) || 0)
       : 0;
 
-  // fetch today's totals
+  // fetch today's totals (and last updated time)
   useEffect(() => {
     if (mode !== "school" || !center || !school || !email) return;
     let cancelled = false;
@@ -201,7 +226,7 @@ export default function UserForm({
           entry_date: todayStr(),
         });
         if (cancelled) return;
-        if (error)
+        if (error) {
           setTodaySoFar({
             vaccinated: 0,
             refused: 0,
@@ -209,7 +234,11 @@ export default function UserForm({
             loading: false,
             error: error.message || String(error),
           });
-        else setTodaySoFar({ ...data, loading: false, error: "" });
+          setLastUpdatedTime("—");
+        } else {
+          setTodaySoFar({ ...data, loading: false, error: "" });
+          setLastUpdatedTime(fmtKsaTimeOnly(data.lastUpdated)); // time-only badge
+        }
       } catch (err) {
         if (!cancelled)
           setTodaySoFar({
@@ -226,25 +255,48 @@ export default function UserForm({
     };
   }, [mode, center, school, facility, email]);
 
-  // completeness (unchanged)
-  const completeness = useMemo(() => {
-    if (mode === "place") {
-      let score = 0,
-        total = 2;
-      if (place) score++;
-      if (numberOrNull(vaccinated) !== null) score++;
-      return Math.round((score / total) * 100);
-    }
-    let score = 0,
-      total = 6;
-    if (facility) score++;
-    if (center) score++;
-    if (school) score++;
-    if (numberOrNull(vaccinated) !== null) score++;
-    if (numberOrNull(refused) !== null) score++;
-    if (numberOrNull(absent) !== null) score++;
-    return Math.round((score / total) * 100);
-  }, [mode, facility, center, school, vaccinated, refused, absent, place]);
+  // Fetch rows for TABLE — only when a school is selected in school mode
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!email) return;
+      if (mode === "school" && !school) {
+        // guard until school chosen
+        setTableRows([]);
+        return;
+      }
+      try {
+        setTableLoading(true);
+        setTableErr("");
+        const { rows, error } = await getEntries({ created_by: email });
+        if (cancelled) return;
+        if (error) {
+          setTableErr(error.message || String(error));
+          setTableRows([]);
+          return;
+        }
+        const filtered = (rows || []).filter((r) => {
+          if (mode !== "school") return true;
+          return (
+            r.facility === facility &&
+            r.clinic_name === center &&
+            r.school_name === school
+          );
+        });
+        setTableRows(filtered); // already ordered by updated_at DESC by API
+      } catch (e) {
+        if (!cancelled) {
+          setTableErr(String(e));
+          setTableRows([]);
+        }
+      } finally {
+        if (!cancelled) setTableLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [email, facility, center, school, mode]);
 
   function askPreview(e) {
     e.preventDefault();
@@ -276,7 +328,6 @@ export default function UserForm({
       return;
     }
 
-    // school
     const v = numberOrNull(vaccinated);
     const r = numberOrNull(refused);
     const a = numberOrNull(absent);
@@ -346,15 +397,16 @@ export default function UserForm({
       const saver = onSubmit || saveToAPI;
       const result = await saver(preview);
       log("save result ->", result);
+
+      const t = fmtKsaTimeOnly(result?.updated_at || result?.created_at);
+      setLastUpdatedTime(t);
+
       setVaccinated("");
       setRefused("");
       setAbsent("");
       setPlace("");
       setPreview(null);
       setStatus({ type: "ok", msg: "تم الحفظ بنجاح" });
-
-      // Store the user in localStorage on successful submission
-      localStorage.setItem("user", JSON.stringify({ email, facility }));
 
       if (mode === "school" && center && school) {
         const { data } = await fetchSchoolDayTotals({
@@ -364,7 +416,24 @@ export default function UserForm({
           school_name: school,
           entry_date: todayStr(),
         });
-        if (data) setTodaySoFar({ ...data, loading: false, error: "" });
+        if (data) {
+          setTodaySoFar({ ...data, loading: false, error: "" });
+          setLastUpdatedTime(fmtKsaTimeOnly(data.lastUpdated));
+        }
+      }
+
+      // Refresh table if visible
+      if (mode === "school" && school) {
+        const { rows, error } = await getEntries({ created_by: email });
+        if (!error && Array.isArray(rows)) {
+          const filtered = rows.filter(
+            (r) =>
+              r.facility === facility &&
+              r.clinic_name === center &&
+              r.school_name === school
+          );
+          setTableRows(filtered);
+        }
       }
     } catch (e) {
       const raw = e?.message || String(e);
@@ -424,12 +493,6 @@ export default function UserForm({
                 أماكن أخرى
               </button>
             </div>
-            {mode === "school" && centers.length === 0 && (
-              <p className="hpv-help mt-2 text-red-600">
-                لا توجد مراكز صحية مرتبطة بمنشأتك — يمكنك استخدام وضع "أماكن
-                أخرى".
-              </p>
-            )}
           </div>
         </div>
       </Card>
@@ -528,9 +591,9 @@ export default function UserForm({
           </Card>
 
           <Card>
-            <div className="grid md:grid-cols-4 gap-4 text-sm">
+            <div className="grid md:grid-cols-5 gap-4 text-sm">
               <div className="flex flex-col">
-                <label className="hpv-label">اخر ادخال </label>
+                <label className="hpv-label">آخر إدخال اليوم</label>
                 <input
                   disabled
                   className="hpv-input bg-gray-100"
@@ -553,6 +616,7 @@ export default function UserForm({
                   value={todaySoFar.loading ? "…" : remainingFromTotal}
                 />
               </div>
+
               <div className="flex flex-col justify-end">
                 {willExceedTotal ? (
                   <Badge tone="warn">
@@ -614,6 +678,98 @@ export default function UserForm({
               <Badge tone="warn">تذكير: غير مطعّم = رفض + غياب</Badge>
             </div>
           </Card>
+
+          {/* ===== TABLE: only show when a school is selected ===== */}
+          {school && (
+            <Card
+              title={
+                <div className="flex items-center gap-3">
+                  <i className="fas fa-school text-sky-600 text-lg"></i>
+
+                  {/* النص الرئيسي */}
+                  <span className="font-extrabold text-lg text-black">
+                    سجلات هذه المدرسة
+                  </span>
+
+                  {/* اسم المدرسة باللون الأزرق */}
+                  {school && (
+                    <span className="text-sky-700 font-bold text-lg">
+                      {school}
+                    </span>
+                  )}
+
+                  {/* Badge يوضح عدد السجلات */}
+                  {school && (
+                    <span className="ml-auto bg-gray-100 text-gray-700 px-3 py-1 rounded-full text-xs font-medium">
+                      {tableRows.length} سجل
+                    </span>
+                  )}
+                </div>
+              }
+              subtitle="جميع السجلات الخاصة بهذه المدرسة، مرتبة من الأحدث إلى الأقدم"
+            >
+              {tableErr && (
+                <div className="text-red-600 mb-2">خطأ: {tableErr}</div>
+              )}
+              <div className="overflow-auto border border-gray-200 rounded-xl">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="p-2 text-right">التاريخ</th>
+                      <th className="p-2 text-right">المركز</th>
+                      <th className="p-2 text-right">المدرسة</th>
+                      <th className="p-2 text-right">مطعّم</th>
+                      <th className="p-2 text-right">رفض</th>
+                      <th className="p-2 text-right">غياب</th>
+                      <th className="p-2 text-right">غير مطعّم</th>
+
+                     </tr>
+                  </thead>
+                  <tbody>
+                    {tableLoading ? (
+                      <tr>
+                        <td
+                          className="p-4 text-center text-gray-500"
+                          colSpan={8}
+                        >
+                          جاري التحميل…
+                        </td>
+                      </tr>
+                    ) : tableRows.length === 0 ? (
+                      <tr>
+                        <td
+                          className="p-4 text-center text-gray-500"
+                          colSpan={8}
+                        >
+                          لا توجد سجلات.
+                        </td>
+                      </tr>
+                    ) : (
+                      tableRows.map((r) => (
+                        <tr
+                          key={
+                            r.id ||
+                            `${r.created_by}-${r.entry_date}-${r.school_name}-${r.updated_at}`
+                          }
+                        >
+                          <td className="p-2 border-t">{r.entry_date}</td>
+                          <td className="p-2 border-t">{r.clinic_name}</td>
+                          <td className="p-2 border-t">{r.school_name}</td>
+                          <td className="p-2 border-t">{r.vaccinated}</td>
+                          <td className="p-2 border-t">{r.refused}</td>
+                          <td className="p-2 border-t">{r.absent}</td>
+                          <td className="p-2 border-t">{r.not_accounted}</td>
+                          {/* RAW DB value */}
+                          <td className="p-2 border-t">
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </Card>
+          )}
         </>
       )}
 
@@ -641,13 +797,11 @@ export default function UserForm({
                   className="hpv-select"
                 >
                   <option value="">— اختر المكان —</option>
-                  {["سجون", "دار الأيتام", "مولات", "أحياء عشوائية"].map(
-                    (p) => (
-                      <option key={p} value={p}>
-                        {p}
-                      </option>
-                    )
-                  )}
+                  {PLACE_OPTIONS.map((p) => (
+                    <option key={p} value={p}>
+                      {p}
+                    </option>
+                  ))}
                 </select>
               </div>
             </div>
@@ -666,7 +820,6 @@ export default function UserForm({
                   inputMode="numeric"
                 />
               </div>
-              {/* refusal/absent hidden -> saved as 0 */}
             </div>
           </Card>
         </>
@@ -747,7 +900,7 @@ export default function UserForm({
                   <b>مطعّم (سيصبح):</b> {preview._wouldBeVaccinated}
                 </div>
                 <div>
-                  <b>اخر ادخال</b> {preview._todaySoFar}
+                  <b>آخر إدخال اليوم:</b> {preview._todaySoFar}
                 </div>
                 <div>
                   <b>رفض:</b> {preview.refused}
@@ -770,13 +923,6 @@ export default function UserForm({
                 <div>
                   <b>العدد الإجمالي للمدرسة:</b> {preview.schoolTotal || 0}
                 </div>
-                {preview._warnExceed && (
-                  <div className="md:col-span-3">
-                    <Badge tone="warn">
-                      تنبيه: هذا الإدخال سيتجاوز إجمالي عدد الطلاب
-                    </Badge>
-                  </div>
-                )}
               </div>
             )}
           </>

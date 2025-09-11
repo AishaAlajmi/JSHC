@@ -16,6 +16,8 @@ const LocalStyles = () => (
       .hpv-btn { border-radius: 999px; padding: .55rem 1rem; font-weight:600; transition: background .15s ease, box-shadow .15s ease, transform .15s ease; }
       .hpv-btn-primary { background: linear-gradient(135deg, #1691d0, #165b93); color:#fff; box-shadow: 0 6px 16px rgba(22,145,208,.25); }
       .hpv-btn-primary:hover { background: linear-gradient(135deg, #165b93, #1691d0); transform: translateY(-1px); box-shadow: 0 8px 18px rgba(18,111,167,.28); }
+      .hpv-btn-icon { background:#f1f5f9; border-radius:50%; width:40px; height:40px; display:flex; align-items:center; justify-content:center; cursor:pointer; transition:background .2s; }
+      .hpv-btn-icon:hover { background:#e2e8f0; }
       table.hpv-table { width:100%; border-collapse:separate; border-spacing:0; font-size:.95rem; }
       table.hpv-table thead th { padding:.7rem .6rem; text-align:right; color:#4b5563; font-weight:700; background:#f9fafb; position:sticky; top:0; z-index:1; }
       table.hpv-table tbody td { padding:.7rem .6rem; border-top:1px solid #f1f5f9; }
@@ -35,17 +37,69 @@ function Field({ label, children }) {
   );
 }
 
-// Row that displays data but does not allow editing
+function num(n) {
+  const v = Number(n);
+  return Number.isFinite(v) ? v : 0;
+}
+
+// Parse YYYY-MM-DD or DD/MM/YYYY or any Date-parsable string/epoch
+function parseDateLoose(v) {
+  if (!v) return null;
+  if (typeof v === "number") return new Date(v);
+  if (typeof v !== "string") {
+    const d = new Date(v);
+    return isNaN(d) ? null : d;
+  }
+  if (v.includes("/")) {
+    const [dd, mm, yyyy] = v.split("/").map(s => s.trim());
+    if (dd && mm && yyyy) {
+      const d = new Date(+yyyy, +mm - 1, +dd);
+      return isNaN(d) ? null : d;
+    }
+  }
+  const d2 = new Date(v);
+  return isNaN(d2) ? null : d2;
+}
+
+/** Prefer "last touched" time for ordering newest first. */
+function getLastTouchedDate(r) {
+  // updated_at → created_at → ts → timestamp → entry_date → date
+  const first =
+    r?.updated_at ??
+    r?.created_at ??
+    r?.ts ??
+    r?.timestamp ??
+    r?.entry_date ??
+    r?.date ??
+    null;
+  const d = parseDateLoose(first);
+  return d || new Date(0);
+}
+
+/** Nicely format a timestamp for the table (YYYY-MM-DD HH:mm). */
+function fmtDateTime(v) {
+  const d = parseDateLoose(v);
+  if (!d) return "";
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+// Row (includes "آخر تحديث" = updated_at)
 function ReadOnlyRow({ record }) {
+  const updatedDisplay = fmtDateTime(
+    record.updated_at ?? record.ts ?? record.timestamp ?? record.created_at
+  );
+
   return (
-    <tr key={record.uid}>
-      <td>{record.date}</td>
+    <tr key={record.uid || `${record.email || record.created_by}-${record.entry_date || record.date}-${record.school || record.center || ''}`}>
+      <td>{record.entry_date || record.date}</td>
       <td>{record.center}</td>
       <td>{record.school}</td>
-      <td>{record.vaccinated}</td>
-      <td>{record.refused}</td>
-      <td>{record.absent}</td>
-      <td>{(record.refused || 0) + (record.absent || 0)}</td>
+      <td>{num(record.vaccinated)}</td>
+      <td>{num(record.refused)}</td>
+      <td>{num(record.absent)}</td>
+      <td>{num(record.unvaccinated) || (num(record.refused) + num(record.absent))}</td>
+      <td>{updatedDisplay}</td>
     </tr>
   );
 }
@@ -54,74 +108,113 @@ export default function MyRecordsSmart({ email, rows }) {
   const [filters, setFilters] = useState({
     from: "",
     to: "",
-    q: "",
-    sortBy: "date",
+    // Default: newest on top by last touched
+    sortBy: "lastTouched",
     dir: "desc",
-    entryType: "", // New filter for "نوع الإدخال"
+    q: "",
+    entryType: "",
   });
+
   const [records, setRecords] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
+  // initial load / refresh when rows prop changes
   useEffect(() => {
-    setRecords(rows);
-    setLoading(false);
+    refreshData();
   }, [rows]);
 
-  // Filter by entry type (either schools or other centers)
-  const filtered = useMemo(
-    () =>
-      records.filter((r) => {
-        if (r.email !== email) return false;
-        if (filters.from && r.date < filters.from) return false;
-        if (filters.to && r.date > filters.to) return false;
-        const q = filters.q.trim();
-        if (q && !(r.center?.includes(q) || r.school?.includes(q))) return false;
+  const refreshData = () => {
+    setLoading(true);
+    setRecords(Array.isArray(rows) ? rows : []);
+    setTimeout(() => setLoading(false), 300);
+  };
 
-        // Filter by "نوع الإدخال" (entry type)
-        if (filters.entryType === "مطعمين داخل المدارس" && !r.school) return false;
-        if (filters.entryType === "أماكن أخرى" && r.school) return false;
+  // Filtered
+  const filtered = useMemo(() => {
+    const fromD = parseDateLoose(filters.from);
+    const toD = parseDateLoose(filters.to);
 
-        return true;
-      }),
-    [records, email, filters.from, filters.to, filters.q, filters.entryType]
-  );
+    return (records || []).filter((r) => {
+      if (r.email && r.email !== email && r.created_by && r.created_by !== email) {
+        // keep if either email or created_by matches; else skip
+        const matchesByEmail = r.email === email || r.created_by === email;
+        if (!matchesByEmail) return false;
+      }
 
+      const dForRange = parseDateLoose(r.entry_date || r.date) || getLastTouchedDate(r);
+      if (fromD && dForRange < new Date(fromD.getFullYear(), fromD.getMonth(), fromD.getDate())) return false;
+      if (toD && dForRange > new Date(toD.getFullYear(), toD.getMonth(), toD.getDate(), 23, 59, 59, 999)) return false;
+
+      const q = (filters.q || "").trim();
+      if (q && !(r.center?.includes(q) || r.school?.includes(q))) return false;
+
+      if (filters.entryType === "مطعمين داخل المدارس" && !r.school) return false;
+      if (filters.entryType === "أماكن أخرى" && r.school) return false;
+
+      return true;
+    });
+  }, [records, email, filters.from, filters.to, filters.q, filters.entryType]);
+
+  // Sorted (DESC by lastTouched by default)
   const sorted = useMemo(() => {
     const arr = [...filtered];
     const dir = filters.dir === "asc" ? 1 : -1;
-    if (filters.sortBy === "vaccinated")
-      arr.sort((a, b) => (a.vaccinated - b.vaccinated) * dir);
-    else if (filters.sortBy === "unvaccinated")
-      arr.sort((a, b) => (a.unvaccinated - b.unvaccinated) * dir);
-    else arr.sort((a, b) => (a.date?.localeCompare(b.date)) * dir);
+
+    arr.sort((a, b) => {
+      if (filters.sortBy === "vaccinated")
+        return (num(a.vaccinated) - num(b.vaccinated)) * dir;
+
+      if (filters.sortBy === "unvaccinated") {
+        const ua = num(a.unvaccinated) || (num(a.refused) + num(a.absent));
+        const ub = num(b.unvaccinated) || (num(b.refused) + num(b.absent));
+        return (ua - ub) * dir;
+      }
+
+      if (filters.sortBy === "date") {
+        const da = parseDateLoose(a.entry_date || a.date) || new Date(0);
+        const db = parseDateLoose(b.entry_date || b.date) || new Date(0);
+        return (da - db) * dir;
+      }
+
+      // Default: lastTouched (updated_at → created_at → …)
+      const ta = getLastTouchedDate(a).getTime();
+      const tb = getLastTouchedDate(b).getTime();
+      return (ta - tb) * dir;
+    });
+
     return arr;
   }, [filtered, filters.sortBy, filters.dir]);
 
+  // Export to Excel (includes updated_at + derived "آخر وقت ترتيب")
   const exportToExcel = () => {
     const arabicHeaders = {
+      entry_date: "التاريخ",
       date: "التاريخ",
       email: "البريد الإلكتروني",
+      created_by: "أُدخِل بواسطة",
       facility: "المنشأة",
       clinic_name: "اسم العيادة",
       school_name: "اسم المدرسة",
       center: "المركز",
-      school: "المدرسة",
+      school: "المكان",
       vaccinated: "المطعّم",
       refused: "رفض",
       absent: "غياب",
       unvaccinated: "غير مطعّم",
       schoolTotal: "إجمالي المدرسة",
+      updated_at: "آخر تحديث",
+      created_at: "تاريخ الإدخال",
       ts: "الطابع الزمني",
+      timestamp: "الطابع الزمني",
     };
 
     const dataWithArabicHeaders = sorted.map((row) => {
       const translatedRow = {};
       for (const [key, value] of Object.entries(row)) {
-        if (arabicHeaders[key]) {
-          translatedRow[arabicHeaders[key]] = value;
-        }
+        if (arabicHeaders[key]) translatedRow[arabicHeaders[key]] = value;
       }
+      translatedRow["آخر وقت ترتيب"] = fmtDateTime(getLastTouchedDate(row));
       return translatedRow;
     });
 
@@ -136,14 +229,13 @@ export default function MyRecordsSmart({ email, rows }) {
     }
   };
 
-  // Clear filters
   const clearFilters = () => {
     setFilters({
       from: "",
       to: "",
-      q: "",
-      sortBy: "date",
+      sortBy: "lastTouched",
       dir: "desc",
+      q: "",
       entryType: "",
     });
   };
@@ -154,8 +246,18 @@ export default function MyRecordsSmart({ email, rows }) {
       <div className="hpv-card">
         <div className="hd">
           <div className="title">سجلاتي</div>
-          <div className="ml-auto text-xs text-gray-500">
-            {loading ? "جاري التحميل..." : `${sorted.length} سجلّ`}
+          <div className="ml-auto flex items-center gap-2">
+            {loading && <i className="fas fa-spinner fa-spin text-gray-500"></i>}
+            <button
+              className="hpv-btn-icon"
+              onClick={refreshData}
+              title="تحديث البيانات"
+            >
+              <i className="fas fa-sync-alt"></i>
+            </button>
+            <div className="text-xs text-gray-500">
+              {loading ? "جاري التحميل..." : `${sorted.length} سجلّ`}
+            </div>
           </div>
         </div>
         <div className="body">
@@ -166,9 +268,7 @@ export default function MyRecordsSmart({ email, rows }) {
               <input
                 type="date"
                 value={filters.from}
-                onChange={(e) =>
-                  setFilters((x) => ({ ...x, from: e.target.value }))
-                }
+                onChange={(e) => setFilters((x) => ({ ...x, from: e.target.value }))}
                 className="hpv-input"
               />
             </Field>
@@ -176,9 +276,7 @@ export default function MyRecordsSmart({ email, rows }) {
               <input
                 type="date"
                 value={filters.to}
-                onChange={(e) =>
-                  setFilters((x) => ({ ...x, to: e.target.value }))
-                }
+                onChange={(e) => setFilters((x) => ({ ...x, to: e.target.value }))}
                 className="hpv-input"
               />
             </Field>
@@ -186,9 +284,7 @@ export default function MyRecordsSmart({ email, rows }) {
               <input
                 placeholder="ابحث في المركز/المدرسة"
                 value={filters.q}
-                onChange={(e) =>
-                  setFilters((x) => ({ ...x, q: e.target.value }))
-                }
+                onChange={(e) => setFilters((x) => ({ ...x, q: e.target.value }))}
                 className="hpv-input"
               />
             </Field>
@@ -227,19 +323,23 @@ export default function MyRecordsSmart({ email, rows }) {
               <tbody>
                 {loading ? (
                   <tr>
-                    <td colSpan={7} className="text-center text-gray-500 py-6">
+                    <td colSpan={8} className="text-center text-gray-500 py-6">
                       <i className="fas fa-spinner fa-spin text-xl mb-2"></i>
                       <div className="text-sm">جاري تحميل السجلات...</div>
                     </td>
                   </tr>
                 ) : (
                   <>
-                    {sorted.slice(-500).map((r) => (
-                      <ReadOnlyRow key={r.uid} record={r} />
+                    {/* Show newest 500 by last touched (updated_at first) */}
+                    {sorted.slice(0, 500).map((r) => (
+                      <ReadOnlyRow
+                        key={r.uid || `${r.email || r.created_by}-${r.entry_date || r.date}-${r.school || r.center || ''}`}
+                        record={r}
+                      />
                     ))}
                     {sorted.length === 0 && (
                       <tr>
-                        <td colSpan={7} className="text-center text-gray-500 py-6">
+                        <td colSpan={8} className="text-center text-gray-500 py-6">
                           لا توجد سجلات مطابقة للفلاتر الحالية.
                         </td>
                       </tr>

@@ -1,14 +1,15 @@
 import React, { useMemo, useState } from "react";
-import LoginEmail from "../components/LoginEmail";
+import LoginEmail from "./LoginEmail";
 
-// القيود الداخلية (Gmail + القائمة البيضاء) — غير معروضة للمستخدم
+/* Allowed emails include admin now */
 const ALLOWED_EMAILS = [
-  "aishahadi2013@gmail.com",
-  "jamelah.hadi2019@gmail.com",
-  "hajer@gmail.com",
-  "alia@gmail.com",
+  "fahad@gmail.com",
+  "abdullah@gmail.com",
+  "rabigh@gmail.com",
+  "admin@gmail.com",
 ];
 
+/* Small Card */
 function Card({ title, children, className = "" }) {
   return (
     <div className={`p-6 rounded-2xl shadow bg-white ${className}`}>
@@ -21,7 +22,7 @@ function Card({ title, children, className = "" }) {
 export default function LoginPage({ onLogin, users }) {
   const [error, setError] = useState("");
 
-  // فلترة المستخدمين داخليًا فقط
+  // keep only allowed keys from the incoming users map
   const filteredUsers = useMemo(() => {
     const out = {};
     Object.entries(users || {}).forEach(([email, info]) => {
@@ -36,22 +37,27 @@ export default function LoginPage({ onLogin, users }) {
 
     const isGmail = /^[a-z0-9._%+-]+@gmail\.com$/.test(email);
     if (!isGmail) return setError("فضلاً استخدم بريد Gmail.");
-    if (!ALLOWED_EMAILS.includes(email))
-      return setError("تعذّر تسجيل الدخول. راجع الجهة المسؤولة لمنح الصلاحية.");
+
+    if (!ALLOWED_EMAILS.includes(email)) {
+      return setError("تعذّر تسجيل الدخول. البريد غير مخوّل.");
+    }
 
     setError("");
-    onLogin(u);
+    onLogin({ email }); // HPVDemo maps to role/facility
   }
 
   return (
     <div className="space-y-6 ar-font">
-      {/* استيراد الخط وتنسيق الصفحة (يؤثر فقط داخل .ar-font) */}
+      {/* ====== OLD STYLES (merged) ====== */}
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&display=swap');
+
         .ar-font, .ar-font * {
-          font-family: "Tajawal", "Noto Kufi Arabic", "Cairo", system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif !important;
+          font-family: "Tajawal", "Noto Kufi Arabic", "Cairo",
+                       system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif !important;
         }
 
+        /* Big rounded blue banner */
         .login-hero {
           position: relative;
           background: linear-gradient(135deg, var(--brand-dark), #0C5485);
@@ -66,7 +72,7 @@ export default function LoginPage({ onLogin, users }) {
           pointer-events: none;
         }
 
-        /* حقول وأزرار تسجيل الدخول */
+        /* Inputs & button inside the login card */
         .login-card input[type="email"], .login-card input[type="text"] {
           border-radius: 0.875rem; padding: .75rem 1rem; border: 1px solid #e5e7eb;
         }
@@ -76,23 +82,28 @@ export default function LoginPage({ onLogin, users }) {
         }
         .login-card button {
           border-radius: 1rem; padding: .7rem 1.15rem;
-          background: var(--brand);       /* اللون الأساسي */
+          background: var(--brand);
           color: #fff;
           transition: background .18s ease, box-shadow .18s ease;
           box-shadow: 0 6px 16px rgba(22,145,208,.25);
         }
         .login-card button:hover {
-          background: #0e6fa7;            /* لون هوفر جديد أغمق ومريح */
+          background: #0e6fa7;
           box-shadow: 0 8px 18px rgba(18,111,167,.28);
         }
         .login-card button:active {
-          background: var(--brand-dark);  /* عند الضغط */
+          background: var(--brand-dark);
           box-shadow: 0 4px 12px rgba(18,111,167,.22);
         }
         .login-card button:focus-visible {
           outline: 3px solid #3AC0C380; outline-offset: 2px;
         }
+
+        /* brand vars (used above) */
+        :root{--brand:#1691D0;--brand-dark:#15508A;--brand-alt:#3AC0C3;}
       `}</style>
+
+    
 
       {/* الهيدر مع شعار أكبر */}
       <header className="login-hero text-white">
@@ -114,13 +125,13 @@ export default function LoginPage({ onLogin, users }) {
           </div>
         </div>
       </header>
-
-      {/* شبكة متجاوبة */}
+      {/* ====== BODY: two cards ====== */}
       <div className="grid gap-6 md:grid-cols-2">
+        {/* login card (keeps old styles on inputs/buttons) */}
         <Card className="login-card">
           <div className="mb-4">
             <h1 className="text-lg font-semibold">تسجيل الدخول</h1>
-            <p className="text-sm text-gray-600">أدخل بريدك على Gmail للمتابعة.</p>
+            <p className="text-sm text-gray-600">اكتب بريدك المعتمد (Gmail) للمتابعة.</p>
           </div>
 
           <LoginEmail onLogin={handleLogin} users={filteredUsers} />
@@ -135,16 +146,15 @@ export default function LoginPage({ onLogin, users }) {
           ) : null}
         </Card>
 
+        {/* instructions card */}
         <Card title="إرشادات">
           <ul className="list-disc pr-5 text-sm text-gray-600 space-y-1">
-            <li>هذا النظام مخصص للأعضاء المخوّلين فقط.</li>
-            <li>في حال واجهت مشكلة، تواصل مع الدعم الفني.</li>
-            <li>احرص على الحفاظ على سرية بيانات الدخول.</li>
+            <li>هذا النظام مخصص للمستخدمين المخوّلين فقط.</li>
+            <li>الدعم الفني متاح في حال واجهتك مشكلة.</li>
+            <li>حافظ على سرية بيانات الدخول دائماً.</li>
           </ul>
         </Card>
       </div>
     </div>
-
   );
-  
 }
