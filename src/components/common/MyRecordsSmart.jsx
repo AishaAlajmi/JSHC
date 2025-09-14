@@ -31,7 +31,9 @@ const LocalStyles = () => (
 function Field({ label, children }) {
   return (
     <div className="flex flex-col">
-      <label className="hpv-label text-sm font-medium text-gray-700 mb-1">{label}</label>
+      <label className="hpv-label text-sm font-medium text-gray-700 mb-1">
+        {label}
+      </label>
       {children}
     </div>
   );
@@ -51,7 +53,7 @@ function parseDateLoose(v) {
     return isNaN(d) ? null : d;
   }
   if (v.includes("/")) {
-    const [dd, mm, yyyy] = v.split("/").map(s => s.trim());
+    const [dd, mm, yyyy] = v.split("/").map((s) => s.trim());
     if (dd && mm && yyyy) {
       const d = new Date(+yyyy, +mm - 1, +dd);
       return isNaN(d) ? null : d;
@@ -81,7 +83,9 @@ function fmtDateTime(v) {
   const d = parseDateLoose(v);
   if (!d) return "";
   const pad = (n) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(
+    d.getHours()
+  )}:${pad(d.getMinutes())}`;
 }
 
 // Row (includes "آخر تحديث" = updated_at)
@@ -91,14 +95,23 @@ function ReadOnlyRow({ record }) {
   );
 
   return (
-    <tr key={record.uid || `${record.email || record.created_by}-${record.entry_date || record.date}-${record.school || record.center || ''}`}>
+    <tr
+      key={
+        record.uid ||
+        `${record.email || record.created_by}-${
+          record.entry_date || record.date
+        }-${record.school || record.center || ""}`
+      }
+    >
       <td>{record.entry_date || record.date}</td>
       <td>{record.center}</td>
       <td>{record.school}</td>
       <td>{num(record.vaccinated)}</td>
       <td>{num(record.refused)}</td>
       <td>{num(record.absent)}</td>
-      <td>{num(record.unvaccinated) || (num(record.refused) + num(record.absent))}</td>
+      <td>
+        {num(record.unvaccinated) || num(record.refused) + num(record.absent)}
+      </td>
       <td>{updatedDisplay}</td>
     </tr>
   );
@@ -136,20 +149,45 @@ export default function MyRecordsSmart({ email, rows }) {
     const toD = parseDateLoose(filters.to);
 
     return (records || []).filter((r) => {
-      if (r.email && r.email !== email && r.created_by && r.created_by !== email) {
+      if (
+        r.email &&
+        r.email !== email &&
+        r.created_by &&
+        r.created_by !== email
+      ) {
         // keep if either email or created_by matches; else skip
         const matchesByEmail = r.email === email || r.created_by === email;
         if (!matchesByEmail) return false;
       }
 
-      const dForRange = parseDateLoose(r.entry_date || r.date) || getLastTouchedDate(r);
-      if (fromD && dForRange < new Date(fromD.getFullYear(), fromD.getMonth(), fromD.getDate())) return false;
-      if (toD && dForRange > new Date(toD.getFullYear(), toD.getMonth(), toD.getDate(), 23, 59, 59, 999)) return false;
+      const dForRange =
+        parseDateLoose(r.entry_date || r.date) || getLastTouchedDate(r);
+      if (
+        fromD &&
+        dForRange <
+          new Date(fromD.getFullYear(), fromD.getMonth(), fromD.getDate())
+      )
+        return false;
+      if (
+        toD &&
+        dForRange >
+          new Date(
+            toD.getFullYear(),
+            toD.getMonth(),
+            toD.getDate(),
+            23,
+            59,
+            59,
+            999
+          )
+      )
+        return false;
 
       const q = (filters.q || "").trim();
       if (q && !(r.center?.includes(q) || r.school?.includes(q))) return false;
 
-      if (filters.entryType === "مطعمين داخل المدارس" && !r.school) return false;
+      if (filters.entryType === "مطعمين داخل المدارس" && !r.school)
+        return false;
       if (filters.entryType === "أماكن أخرى" && r.school) return false;
 
       return true;
@@ -166,8 +204,8 @@ export default function MyRecordsSmart({ email, rows }) {
         return (num(a.vaccinated) - num(b.vaccinated)) * dir;
 
       if (filters.sortBy === "unvaccinated") {
-        const ua = num(a.unvaccinated) || (num(a.refused) + num(a.absent));
-        const ub = num(b.unvaccinated) || (num(b.refused) + num(b.absent));
+        const ua = num(a.unvaccinated) || num(a.refused) + num(a.absent);
+        const ub = num(b.unvaccinated) || num(b.refused) + num(b.absent);
         return (ua - ub) * dir;
       }
 
@@ -194,8 +232,8 @@ export default function MyRecordsSmart({ email, rows }) {
       email: "البريد الإلكتروني",
       created_by: "أُدخِل بواسطة",
       facility: "المنشأة",
-      clinic_name: "اسم العيادة",
-      school_name: "اسم المدرسة",
+      // clinic_name: "اسم العيادة",
+      // school_name: "اسم المدرسة",
       center: "المركز",
       school: "المكان",
       vaccinated: "المطعّم",
@@ -214,7 +252,7 @@ export default function MyRecordsSmart({ email, rows }) {
       for (const [key, value] of Object.entries(row)) {
         if (arabicHeaders[key]) translatedRow[arabicHeaders[key]] = value;
       }
-      translatedRow["آخر وقت ترتيب"] = fmtDateTime(getLastTouchedDate(row));
+      translatedRow["آخر تعديل"] = fmtDateTime(getLastTouchedDate(row));
       return translatedRow;
     });
 
@@ -247,7 +285,9 @@ export default function MyRecordsSmart({ email, rows }) {
         <div className="hd">
           <div className="title">سجلاتي</div>
           <div className="ml-auto flex items-center gap-2">
-            {loading && <i className="fas fa-spinner fa-spin text-gray-500"></i>}
+            {loading && (
+              <i className="fas fa-spinner fa-spin text-gray-500"></i>
+            )}
             <button
               className="hpv-btn-icon"
               onClick={refreshData}
@@ -268,7 +308,9 @@ export default function MyRecordsSmart({ email, rows }) {
               <input
                 type="date"
                 value={filters.from}
-                onChange={(e) => setFilters((x) => ({ ...x, from: e.target.value }))}
+                onChange={(e) =>
+                  setFilters((x) => ({ ...x, from: e.target.value }))
+                }
                 className="hpv-input"
               />
             </Field>
@@ -276,7 +318,9 @@ export default function MyRecordsSmart({ email, rows }) {
               <input
                 type="date"
                 value={filters.to}
-                onChange={(e) => setFilters((x) => ({ ...x, to: e.target.value }))}
+                onChange={(e) =>
+                  setFilters((x) => ({ ...x, to: e.target.value }))
+                }
                 className="hpv-input"
               />
             </Field>
@@ -284,7 +328,9 @@ export default function MyRecordsSmart({ email, rows }) {
               <input
                 placeholder="ابحث في المركز/المدرسة"
                 value={filters.q}
-                onChange={(e) => setFilters((x) => ({ ...x, q: e.target.value }))}
+                onChange={(e) =>
+                  setFilters((x) => ({ ...x, q: e.target.value }))
+                }
                 className="hpv-input"
               />
             </Field>
@@ -333,13 +379,21 @@ export default function MyRecordsSmart({ email, rows }) {
                     {/* Show newest 500 by last touched (updated_at first) */}
                     {sorted.slice(0, 500).map((r) => (
                       <ReadOnlyRow
-                        key={r.uid || `${r.email || r.created_by}-${r.entry_date || r.date}-${r.school || r.center || ''}`}
+                        key={
+                          r.uid ||
+                          `${r.email || r.created_by}-${
+                            r.entry_date || r.date
+                          }-${r.school || r.center || ""}`
+                        }
                         record={r}
                       />
                     ))}
                     {sorted.length === 0 && (
                       <tr>
-                        <td colSpan={8} className="text-center text-gray-500 py-6">
+                        <td
+                          colSpan={8}
+                          className="text-center text-gray-500 py-6"
+                        >
                           لا توجد سجلات مطابقة للفلاتر الحالية.
                         </td>
                       </tr>

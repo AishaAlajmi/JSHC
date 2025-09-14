@@ -21,10 +21,10 @@ function Card({ title, children, className = "" }) {
 
 /* ---------- In-memory users only (no localStorage) ---------- */
 const USERS = {
-  "fahad@gmail.com":    { role: "user", facility: "م. ا فهد مع المدارس العالمية" },
+  "fahad@gmail.com": { role: "user", facility: "م. ا فهد مع المدارس العالمية" },
   "abdullah@gmail.com": { role: "user", facility: "مجمع الملك عبد الله" },
-  "rabigh@gmail.com":   { role: "user", facility: "رابغ" },
-  "admin@gmail.com":    { role: "admin", facility: null },
+  "rabigh@gmail.com": { role: "user", facility: "رابغ" },
+  "admin@gmail.com": { role: "admin", facility: null },
 };
 
 const BrandStyles = () => (
@@ -43,9 +43,14 @@ export default function HPVDemo() {
   const [responses, setRows] = useState([]);
   const [schoolInfo, setSchoolInfoState] = useState({});
 
-  useEffect(() => { setRows([]); }, []);
+  useEffect(() => {
+    setRows([]);
+  }, []);
 
-  const signOut = () => { setUser(null); setRows([]); };
+  const signOut = () => {
+    setUser(null);
+    setRows([]);
+  };
 
   function mapEntryToLocal(r) {
     return {
@@ -123,7 +128,9 @@ export default function HPVDemo() {
     const localRow = {
       ...previewRow,
       email: user?.email || previewRow.email || "",
-      date: previewRow.date || (data?.entry_date || data?.created_at || "").slice(0, 10),
+      date:
+        previewRow.date ||
+        (data?.entry_date || data?.created_at || "").slice(0, 10),
       clinic_name: clinicName,
       school_name: schoolName,
       center: clinicName,
@@ -143,30 +150,34 @@ export default function HPVDemo() {
 
   return (
     <div dir="rtl" className="min-h-screen bg-[#F6F9FF]">
-<BrandStyles />
-<header className="sticky top-0 z-10 text-white brand-gradient">
-  <div className="max-w-6xl mx-auto px-4 py-3 flex items-center gap-3">
-    <div className="font-bold">الحملة الوطنية للتطعيم باللقاح الثلاثي الفيروسي</div>
-    {user && (
-      <button
-        className="ml-auto px-4 py-2 rounded-xl bg-[#1691D0] text-white font-medium shadow hover:bg-[#127ab0] transition"
-        onClick={signOut}
-      >
-        تسجيل الخروج
-      </button>
-    )}
-  </div>
-</header>
-
+      <BrandStyles />
+      <header className="sticky top-0 z-10 text-white brand-gradient">
+        <div className="max-w-6xl mx-auto px-4 py-3 flex items-center gap-3">
+          <div className="font-bold">
+            الحملة الوطنية للتطعيم باللقاح الثلاثي الفيروسي
+          </div>
+          {user && (
+            <button
+              className="ml-auto px-4 py-2 rounded-xl bg-[#1691D0] text-white font-medium shadow hover:bg-[#127ab0] transition"
+              onClick={signOut}
+            >
+              تسجيل الخروج
+            </button>
+          )}
+        </div>
+      </header>
 
       <main className="max-w-6xl mx-auto p-4">
         {!user && (
           <LoginPage
             users={USERS}
             onLogin={(u) => {
-              const email = (typeof u === "string" ? u : u?.email || "").toLowerCase();
+              const email = (
+                typeof u === "string" ? u : u?.email || ""
+              ).toLowerCase();
               const info = USERS[email];
-              if (info) setUser({ email, role: info.role, facility: info.facility });
+              if (info)
+                setUser({ email, role: info.role, facility: info.facility });
               else setUser(null);
             }}
           />
@@ -209,21 +220,10 @@ export default function HPVDemo() {
         )}
       </main>
 
-<footer className="max-w-6xl mx-auto p-4 text-center text-gray-500">
-  حقوق النشر محفوظة لدى <span className="font-bold">تجمع جدة الصحي الثاني</span>
-  <div className="text-xs mt-2">
-    Developed by{" "}
-    <a
-      href="https://www.linkedin.com/in/jamelah-al-ajmi-8a8420234/"
-      target="_blank"
-      rel="noopener noreferrer"
-      className="text-blue-500 hover:underline"
-    >
-      Jamilah Alajmi
-    </a>
-  </div>
-</footer>
-
+      <footer className="max-w-6xl mx-auto p-4 text-center text-gray-500">
+        حقوق النشر محفوظة لدى{" "}
+        <span className="font-bold">تجمع جدة الصحي الثاني</span>
+      </footer>
     </div>
   );
 }

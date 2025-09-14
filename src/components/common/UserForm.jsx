@@ -123,15 +123,15 @@ export default function UserForm({
     error: "",
   });
 
-const PLACE_OPTIONS = [
-  "مركز صحي",
-  "مولات وأماكن عامة",
-  "دور الرعاية والأيتام",
-  "السجون",
-  "المعاهد الفنية والحرفية",
-  "الحضانات",
-  "أخرى"
-];
+  const PLACE_OPTIONS = [
+    "مركز صحي",
+    "مولات وأماكن عامة",
+    "دور الرعاية والأيتام",
+    "السجون",
+    "المعاهد الفنية والحرفية",
+    "الحضانات",
+    "أخرى",
+  ];
 
   const [place, setPlace] = useState("");
 
@@ -766,7 +766,6 @@ const PLACE_OPTIONS = [
                           <td className="p-2 border-t">{r.refused}</td>
                           <td className="p-2 border-t">{r.absent}</td>
                           <td className="p-2 border-t">{r.not_accounted}</td>
-                          {/* RAW DB value */}
                           <td className="p-2 border-t"></td>
                         </tr>
                       ))
@@ -791,8 +790,7 @@ const PLACE_OPTIONS = [
                   disabled
                   className="hpv-input bg-gray-100"
                 />
-                <span className="hpv-help mt-1">
-                 </span>
+                <span className="hpv-help mt-1"></span>
               </div>
               <div className="flex flex-col">
                 <label className="hpv-label">المكان</label>
