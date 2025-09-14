@@ -123,8 +123,16 @@ export default function UserForm({
     error: "",
   });
 
-  // Place state
-  const PLACE_OPTIONS = ["سجون", "دار الأيتام", "مولات", "أحياء عشوائية"];
+const PLACE_OPTIONS = [
+  "مركز صحي",
+  "مولات وأماكن عامة",
+  "دور الرعاية والأيتام",
+  "السجون",
+  "المعاهد الفنية والحرفية",
+  "الحضانات",
+  "أخرى"
+];
+
   const [place, setPlace] = useState("");
 
   // Shared UI
@@ -722,8 +730,7 @@ export default function UserForm({
                       <th className="p-2 text-right">رفض</th>
                       <th className="p-2 text-right">غياب</th>
                       <th className="p-2 text-right">غير مطعّم</th>
-
-                     </tr>
+                    </tr>
                   </thead>
                   <tbody>
                     {tableLoading ? (
@@ -760,8 +767,7 @@ export default function UserForm({
                           <td className="p-2 border-t">{r.absent}</td>
                           <td className="p-2 border-t">{r.not_accounted}</td>
                           {/* RAW DB value */}
-                          <td className="p-2 border-t">
-                          </td>
+                          <td className="p-2 border-t"></td>
                         </tr>
                       ))
                     )}
@@ -786,8 +792,7 @@ export default function UserForm({
                   className="hpv-input bg-gray-100"
                 />
                 <span className="hpv-help mt-1">
-                  سيتم حفظ الإدخال كموقع عام (ليس مدرسة).
-                </span>
+                 </span>
               </div>
               <div className="flex flex-col">
                 <label className="hpv-label">المكان</label>
