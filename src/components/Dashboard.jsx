@@ -1,11 +1,11 @@
-// Vaccination Admin Dashboard (Arabic RTL) — Charts + Exact Table
+// Vaccination Admin Dashboard (Arabic  RTL) — Charts + Exact Table
 // ---------------------------------------------------------------
 // ENV (Vite):
 //   VITE_SUPABASE_URL=...
 //   VITE_SUPABASE_ANON_KEY=...
 // Table "daily_entries" expected columns (at least):
 //   entry_date (YYYY-MM-DD), facility, clinic_name, school_name,
-//   vaccinated, refused, absent, not_accounted, school_total (optional)
+//   vaccinated, refused, absent, not_accounted, school_total, updated_at
 
 import React, { useEffect, useMemo, useState } from "react";
 import { createClient } from "@supabase/supabase-js";
@@ -57,7 +57,6 @@ const schoolsAgg = (rows) => {
     o.r += r.refused ?? 0;
     o.a += r.absent ?? 0;
     o.n += r.not_accounted ?? 0;
-    // if there are multiple entries per school, take the max declared total
     o.tot = Math.max(o.tot, r.school_total ?? 0);
     map.set(s, o);
   });
@@ -68,6 +67,12 @@ const schoolsAgg = (rows) => {
     coverage: safeDiv(o.v, o.tot),
   }));
 };
+
+// timestamp helper for sorting
+function ts(v) {
+  const x = v ? Date.parse(v) : NaN;
+  return Number.isFinite(x) ? x : -Infinity;
+}
 
 export default function VaccinationAdminDashboardAR() {
   // top filters (cascading)
@@ -89,7 +94,7 @@ export default function VaccinationAdminDashboardAR() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  // fetch once
+  // fetch once (ordered by updated_at DESC from source)
   useEffect(() => {
     (async () => {
       try {
@@ -97,8 +102,9 @@ export default function VaccinationAdminDashboardAR() {
         const { data, error } = await supabase
           .from("daily_entries")
           .select(
-            "entry_date, facility, clinic_name, school_name, vaccinated, refused, absent, not_accounted, school_total"
+            "entry_date, facility, clinic_name, school_name, vaccinated, refused, absent, not_accounted, school_total, updated_at"
           )
+          .order("updated_at", { ascending: false })
           .limit(100000);
         if (error) throw error;
         setRows(data || []);
@@ -144,7 +150,7 @@ export default function VaccinationAdminDashboardAR() {
     );
   }, [rows, facility, clinic, school]);
 
-  // apply date-range + search (used by both charts and table so they match)
+  // apply date-range + search
   const filtered = useMemo(() => {
     const inRange = (d, f, t) => (!f || d >= f) && (!t || d <= t);
     const qLower = q.trim().toLowerCase();
@@ -157,7 +163,16 @@ export default function VaccinationAdminDashboardAR() {
     });
   }, [filteredTop, fromDate, toDate, q]);
 
-  // KPIs
+  // final sort (DESC by updated_at, then entry_date) before table/pagination
+  const filteredSorted = useMemo(() => {
+    return [...filtered].sort((a, b) => {
+      const d = ts(b.updated_at) - ts(a.updated_at);
+      if (d !== 0) return d;
+      return String(b.entry_date || "").localeCompare(String(a.entry_date || ""));
+    });
+  }, [filtered]);
+
+  // KPIs (based on filtered; sorting not needed)
   const totals = useMemo(
     () =>
       filtered.reduce(
@@ -333,17 +348,18 @@ export default function VaccinationAdminDashboardAR() {
 
   // ---------- table derivations ----------
   const tableRowsAR = useMemo(() => {
-    return filtered.map((r) => ({
+    return filteredSorted.map((r) => ({
       entry_date: r.entry_date || "",
-            facility: r.facility || "",        // NEW
+      facility: r.facility || "",
       clinic_name: r.clinic_name || "",
       school_name: r.school_name || "",
       vaccinated: r.vaccinated ?? 0,
       refused: r.refused ?? 0,
       absent: r.absent ?? 0,
       not_accounted: r.not_accounted ?? 0,
+      _updated_at: r.updated_at || null, // kept for future use if needed
     }));
-  }, [filtered]);
+  }, [filteredSorted]);
 
   const totalPages = Math.max(1, Math.ceil(tableRowsAR.length / pageSize));
   const pageSafe = Math.min(page, totalPages);
@@ -354,12 +370,11 @@ export default function VaccinationAdminDashboardAR() {
     setPage(1);
   }, [facility, clinic, school, fromDate, toDate, q, pageSize]);
 
-  // export (filtered)
+  // export (filtered & already sorted by updated_at desc)
   function exportExcel(rowsToExport, filename = "vaccination_records_filtered.xlsx") {
     const headersMap = {
       entry_date: "التاريخ",
-        facility: "المنشأة",          // NEW
-
+      facility: "المنشأة",
       clinic_name: "المركز",
       school_name: "المكان",
       vaccinated: "مطعم",
@@ -380,7 +395,7 @@ export default function VaccinationAdminDashboardAR() {
 
   // --- UI ---
   return (
-    <div dir="rtl" className="min-h-screen w-full bg-[#F5F7FB] text-slate-900 p-4">
+    <div dir="rtl" className="min-h-screen w/full bg-[#F5F7FB] text-slate-900 p-4">
       {/* Filters row */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3 bg-white border border-slate-200 rounded-xl px-4 py-2 shadow-sm">
@@ -481,14 +496,17 @@ export default function VaccinationAdminDashboardAR() {
         </div>
       </div>
 
-      {/* ===== Redesigned Arabic Table (exact style) ===== */}
+      {/* ===== Redesigned Arabic Table ===== */}
       <div className="mt-6 bg-white border rounded-2xl shadow-sm">
         {/* Header */}
         <div className="flex flex-col lg:flex-row gap-3 lg:items-center justify-between p-4">
           <div className="font-extrabold text-slate-800">
-            سجلاي{" "}
+            سجلاتي{" "}
             <span className="text-slate-500 font-medium text-sm">
               {tableRowsAR.length} سجل
+            </span>
+            <span className="ms-3 text-[11px] text-slate-500">
+              (مرتب حسب: آخر تحديث)
             </span>
           </div>
 
@@ -542,7 +560,6 @@ export default function VaccinationAdminDashboardAR() {
               تصدير إلى Excel
             </button>
 
-            {/* Optional: page size selector (kept minimal to match screenshot) */}
             <select
               className="border border-slate-300 rounded-xl px-2 py-2 text-sm"
               value={pageSize}
@@ -563,7 +580,7 @@ export default function VaccinationAdminDashboardAR() {
             <thead className="sticky top-0 bg-slate-50 text-slate-700 border-y">
               <tr className="whitespace-nowrap">
                 <th className="px-4 py-3">التاريخ</th>
-                <th className="px-4 py-3">المنشأة</th>   {/* NEW */}
+                <th className="px-4 py-3">المنشأة</th>
                 <th className="px-4 py-3">المركز</th>
                 <th className="px-4 py-3">المكان</th>
                 <th className="px-4 py-3">مطعم</th>
@@ -576,8 +593,7 @@ export default function VaccinationAdminDashboardAR() {
               {pageSliceAR.map((r, idx) => (
                 <tr key={idx} className="border-b last:border-b-0">
                   <td className="px-4 py-3">{r.entry_date || "—"}</td>
-                        <td className="px-4 py-3">{r.facility}</td>             {/* NEW */}
-
+                  <td className="px-4 py-3">{r.facility}</td>
                   <td className="px-4 py-3">{r.clinic_name}</td>
                   <td className="px-4 py-3">{r.school_name}</td>
                   <td className="px-4 py-3">{r.vaccinated}</td>
@@ -588,7 +604,7 @@ export default function VaccinationAdminDashboardAR() {
               ))}
               {pageSliceAR.length === 0 && (
                 <tr>
-                  <td className="px-4 py-6 text-center text-slate-500" colSpan={7}>
+                  <td className="px-4 py-6 text-center text-slate-500" colSpan={8}>
                     لا توجد سجلات مطابقة للبحث الحالي
                   </td>
                 </tr>
