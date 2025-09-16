@@ -306,6 +306,26 @@ export default function UserForm({
     };
   }, [email, facility, center, school, mode]);
 
+  // ===== Derived values from the table (سجلات هذه المدرسة) =====
+  const lastEntry = useMemo(
+    () => ((tableRows && tableRows.length > 0) ? tableRows[0] : null),
+    [tableRows]
+  );
+  const lastEntryVaccinated = useMemo(
+    () => (lastEntry ? (Number(lastEntry.vaccinated) || 0) : 0),
+    [lastEntry]
+  );
+  const cumulativeVaccinated = useMemo(
+    () => (tableRows || []).reduce((sum, r) => sum + (Number(r.vaccinated) || 0), 0),
+    [tableRows]
+  );
+  const schoolTotalFixed = Number(fixed.schoolTotal) || 0;
+  const remainingFromSchoolTotal = Math.max(0, schoolTotalFixed - cumulativeVaccinated);
+  const willExceedTotal = schoolTotalFixed > 0 && cumulativeVaccinated > schoolTotalFixed;
+  const lastEntryTime = lastEntry
+    ? fmtKsaTimeOnly(lastEntry.updated_at || lastEntry.created_at)
+    : "—";
+
   function askPreview(e) {
     e.preventDefault();
 
@@ -451,18 +471,6 @@ export default function UserForm({
   }
 
   const isSaving = status.type === "saving";
-  const vInput = numberOrNull(vaccinated) || 0;
-  const todayVaccinated = todaySoFar.vaccinated || 0;
-  const projectedVaccinated =
-    todayVaccinated + (mode === "school" ? vInput : 0);
-  const remainingFromTotal =
-    mode === "school"
-      ? Math.max(0, (Number(fixed.schoolTotal) || 0) - projectedVaccinated)
-      : 0;
-  const willExceedTotal =
-    mode === "school" &&
-    (Number(fixed.schoolTotal) || 0) > 0 &&
-    projectedVaccinated > (Number(fixed.schoolTotal) || 0);
 
   return (
     <form onSubmit={askPreview} className="hpv-form space-y-5">
@@ -598,6 +606,7 @@ export default function UserForm({
             </div>
           </Card>
 
+          {/* ===== Calculations from the table ===== */}
           <Card>
             <div className="grid md:grid-cols-5 gap-4 text-sm">
               <div className="flex flex-col">
@@ -605,15 +614,17 @@ export default function UserForm({
                 <input
                   disabled
                   className="hpv-input bg-gray-100"
-                  value={todaySoFar.loading ? "…" : todayVaccinated}
+                  value={tableLoading ? "…" : lastEntryVaccinated}
                 />
+                {/* اختياري: */}
+                {/* <span className="hpv-help mt-1">آخر تحديث: {lastEntryTime}</span> */}
               </div>
               <div className="flex flex-col">
                 <label className="hpv-label">عدد المطعمين تراكمياً</label>
                 <input
                   disabled
                   className="hpv-input bg-gray-100"
-                  value={todaySoFar.loading ? "…" : projectedVaccinated}
+                  value={tableLoading ? "…" : cumulativeVaccinated}
                 />
               </div>
               <div className="flex flex-col">
@@ -621,17 +632,17 @@ export default function UserForm({
                 <input
                   disabled
                   className="hpv-input bg-gray-100"
-                  value={todaySoFar.loading ? "…" : remainingFromTotal}
+                  value={tableLoading ? "…" : remainingFromSchoolTotal}
                 />
               </div>
 
               <div className="flex flex-col justify-end">
                 {willExceedTotal ? (
                   <Badge tone="warn">
-                    تنبيه: سيتجاوز إجمالي المطعّمين عدد المدرسة
+                    تنبيه: التراكمي تجاوز إجمالي المدرسة
                   </Badge>
                 ) : (
-                  <Badge tone="ok">الحسابات محدثة لليوم</Badge>
+                  <Badge tone="ok">الحسابات من سجلات هذه المدرسة</Badge>
                 )}
               </div>
             </div>
