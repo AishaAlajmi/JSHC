@@ -220,10 +220,22 @@ export default function HPVDemo() {
         )}
       </main>
 
-      <footer className="max-w-6xl mx-auto p-4 text-center text-gray-500">
-        حقوق النشر محفوظة لدى{" "}
-        <span className="font-bold">تجمع جدة الصحي الثاني</span>
-      </footer>
+ <footer className="max-w-6xl mx-auto p-4 text-center text-gray-500">
+  حقوق النشر محفوظة لدى{" "}
+  <span className="font-bold">تجمع جدة الصحي الثاني</span>
+  <div className="mt-2">
+    Developed by{" "}
+    <a
+      href="https://www.linkedin.com/in/jamelah-alajmi" // ضع رابط لينكدإن الخاص بك هنا
+      target="_blank"
+      rel="noopener noreferrer"
+      className="text-blue-600 hover:underline font-medium"
+    >
+      Jamelah Alajmi
+    </a>
+  </div>
+</footer>
+
     </div>
   );
 }
