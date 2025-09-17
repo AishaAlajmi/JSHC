@@ -226,7 +226,7 @@ export default function HPVDemo() {
   <div className="mt-2">
     Developed by{" "}
     <a
-      href="https://www.linkedin.com/in/jamelah-alajmi" // ضع رابط لينكدإن الخاص بك هنا
+      href="https://www.linkedin.com/in/jamelah-al-ajmi-8a8420234/" // ضع رابط لينكدإن الخاص بك هنا
       target="_blank"
       rel="noopener noreferrer"
       className="text-blue-600 hover:underline font-medium"
